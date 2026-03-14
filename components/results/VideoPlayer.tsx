@@ -1,19 +1,26 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { Play, Pause, Download, Volume2, VolumeX } from "lucide-react";
-import { Tooltip } from "@/components/ui/Tooltip";
-import { cn } from "@/lib/utils";
+import { useRef, useState, useCallback } from "react";
+import { Play, Pause, Volume2, VolumeX, Download } from "lucide-react";
 import { AspectRatio } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 interface VideoPlayerProps {
   url: string;
   aspectRatio: AspectRatio;
 }
 
-function getMaxWidth(ratio: AspectRatio): string {
+function paddingBottom(ratio: AspectRatio) {
   const [w, h] = ratio.split(":").map(Number);
-  return h > w ? "280px" : "520px";
+  return `${(h / w) * 100}%`;
+}
+
+function maxWidth(ratio: AspectRatio) {
+  const [w, h] = ratio.split(":").map(Number);
+  // portrait → narrow, landscape / square → wider
+  if (h > w) return "300px";
+  if (h === w) return "400px";
+  return "520px";
 }
 
 export function VideoPlayer({ url, aspectRatio }: VideoPlayerProps) {
@@ -21,76 +28,94 @@ export function VideoPlayer({ url, aspectRatio }: VideoPlayerProps) {
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(true);
   const [progress, setProgress] = useState(0);
+  const [error, setError] = useState(false);
 
-  const [w, h] = aspectRatio.split(":").map(Number);
-  const maxWidth = getMaxWidth(aspectRatio);
+  // ── play / pause ─────────────────────────────────────────────────────────────
+  const handleTogglePlay = useCallback(async () => {
+    const v = videoRef.current;
+    if (!v) return;
+    try {
+      if (playing) {
+        v.pause();
+        setPlaying(false);
+      } else {
+        await v.play();
+        setPlaying(true);
+      }
+    } catch (err) {
+      console.error("VideoPlayer play error:", err);
+      setError(true);
+    }
+  }, [playing]);
 
-  // ── Handlers ─────────────────────────────────────────────────────────────────
+  // ── mute ─────────────────────────────────────────────────────────────────────
+  const handleToggleMute = useCallback(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    v.muted = !v.muted;
+    setMuted(v.muted);
+  }, []);
 
-  const play = () => {
-    videoRef.current?.play();
-    setPlaying(true);
-  };
-
-  const pause = () => {
-    videoRef.current?.pause();
-    setPlaying(false);
-  };
-
-  const togglePlay = () => (playing ? pause() : play());
-
-  const toggleMute = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!videoRef.current) return;
-    videoRef.current.muted = !muted;
-    setMuted(!muted);
-  };
-
-  const handleTimeUpdate = () => {
+  // ── progress ─────────────────────────────────────────────────────────────────
+  const handleTimeUpdate = useCallback(() => {
     const v = videoRef.current;
     if (!v || !v.duration) return;
     setProgress((v.currentTime / v.duration) * 100);
-  };
+  }, []);
 
-  const handleEnded = () => {
+  const handleEnded = useCallback(() => {
     setPlaying(false);
     setProgress(0);
-  };
+  }, []);
 
-  const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
-    e.stopPropagation();
-    if (!videoRef.current) return;
+  // ── seek ─────────────────────────────────────────────────────────────────────
+  const handleSeek = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const v = videoRef.current;
+    if (!v || !v.duration) return;
     const rect = e.currentTarget.getBoundingClientRect();
-    videoRef.current.currentTime =
-      ((e.clientX - rect.left) / rect.width) * videoRef.current.duration;
-  };
+    v.currentTime = ((e.clientX - rect.left) / rect.width) * v.duration;
+  }, []);
 
-  const handleDownload = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  // ── download ─────────────────────────────────────────────────────────────────
+  const handleDownload = useCallback(() => {
     const a = document.createElement("a");
     a.href = url;
     a.download = `genius-imagine-${Date.now()}.mp4`;
     a.target = "_blank";
     a.click();
-  };
+  }, [url]);
 
-  // ── Render ────────────────────────────────────────────────────────────────────
+  const pb = paddingBottom(aspectRatio);
+  const mw = maxWidth(aspectRatio);
+
+  // ── fallback if video errors ─────────────────────────────────────────────────
+  if (error) {
+    return (
+      <div
+        className="rounded-2xl bg-[#2a2b2e] border border-[#3a3b3e] flex flex-col items-center justify-center gap-3 py-8 px-4"
+        style={{ maxWidth: mw }}
+      >
+        <p className="text-sm text-[#6b7280]">Video unavailable — try downloading directly</p>
+        <button
+          onClick={handleDownload}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#333438] hover:bg-[#3a3b3e] text-white text-sm transition-colors"
+        >
+          <Download size={14} />
+          Download video
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div
-      className="group relative rounded-2xl overflow-hidden bg-black select-none"
-      style={{ width: "100%", maxWidth }}
+      className="rounded-2xl overflow-hidden bg-black"
+      style={{ width: "100%", maxWidth: mw }}
     >
-      {/*
-        Use a block-level wrapper that establishes the aspect ratio via
-        padding-bottom so both the video AND the overlay controls sit
-        inside a container with defined height.
-      */}
-      <div
-        className="relative w-full"
-        style={{ paddingBottom: `${(h / w) * 100}%` }}
-      >
-        {/* ── Video element ── */}
+      {/* Aspect-ratio wrapper */}
+      <div className="relative w-full" style={{ paddingBottom: pb }}>
+
+        {/* ── The video itself ── */}
         <video
           ref={videoRef}
           src={url}
@@ -100,73 +125,76 @@ export function VideoPlayer({ url, aspectRatio }: VideoPlayerProps) {
           preload="metadata"
           onTimeUpdate={handleTimeUpdate}
           onEnded={handleEnded}
-          className="absolute inset-0 w-full h-full object-contain cursor-pointer"
-          // Single source of truth for click: the video element itself
-          onClick={togglePlay}
+          onError={() => setError(true)}
+          className="absolute inset-0 w-full h-full object-contain"
         />
 
-        {/* ── Centre play overlay (only shown when paused) ── */}
+        {/* ── Big play button — sits on top, only when paused ── */}
         {!playing && (
-          <div
-            className="absolute inset-0 flex items-center justify-center pointer-events-none"
+          <button
+            type="button"
+            onClick={handleTogglePlay}
+            className="absolute inset-0 w-full h-full flex items-center justify-center z-10 cursor-pointer"
+            aria-label="Play"
           >
-            <div className="w-14 h-14 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center">
-              <Play size={24} className="text-white ml-1" fill="white" />
+            <div className="w-16 h-16 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center hover:bg-black/80 transition-colors pointer-events-none">
+              <Play size={26} fill="white" className="text-white ml-1" />
             </div>
-          </div>
+          </button>
         )}
 
-        {/* ── Controls bar ── */}
+        {/* ── Controls bar — only shown on hover when playing, always when paused ── */}
         <div
           className={cn(
-            "absolute bottom-0 left-0 right-0 transition-opacity duration-200",
-            playing ? "opacity-0 group-hover:opacity-100" : "opacity-100"
+            "absolute bottom-0 left-0 right-0 z-20 transition-opacity duration-150",
+            playing ? "opacity-0 hover:opacity-100" : "opacity-100"
           )}
-          // Stop clicks on the controls bar from toggling play/pause
-          onClick={(e) => e.stopPropagation()}
         >
-          {/* Progress bar */}
+          {/* Progress */}
           <div
-            className="mx-3 mb-2 h-1 bg-white/20 rounded-full cursor-pointer"
+            className="mx-3 mb-2 h-1.5 bg-white/20 rounded-full cursor-pointer"
             onClick={handleSeek}
           >
             <div
-              className="h-full bg-white rounded-full"
-              style={{ width: `${progress}%`, transition: "none" }}
+              className="h-full bg-white rounded-full pointer-events-none"
+              style={{ width: `${progress}%` }}
             />
           </div>
 
-          {/* Buttons row */}
+          {/* Buttons */}
           <div className="flex items-center justify-between px-3 pb-3 bg-gradient-to-t from-black/70 to-transparent">
             <div className="flex items-center gap-2">
               <button
-                onClick={togglePlay}
-                className="w-7 h-7 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
+                type="button"
+                onClick={handleTogglePlay}
+                className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white"
+                aria-label={playing ? "Pause" : "Play"}
               >
-                {playing ? (
-                  <Pause size={13} fill="white" />
-                ) : (
-                  <Play size={13} className="ml-0.5" fill="white" />
-                )}
+                {playing
+                  ? <Pause size={14} fill="white" />
+                  : <Play size={14} fill="white" className="ml-0.5" />
+                }
               </button>
               <button
-                onClick={toggleMute}
-                className="w-7 h-7 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
+                type="button"
+                onClick={handleToggleMute}
+                className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white"
+                aria-label={muted ? "Unmute" : "Mute"}
               >
-                {muted ? <VolumeX size={13} /> : <Volume2 size={13} />}
+                {muted ? <VolumeX size={14} /> : <Volume2 size={14} />}
               </button>
             </div>
-
-            <Tooltip content="Download" side="top">
-              <button
-                onClick={handleDownload}
-                className="w-7 h-7 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
-              >
-                <Download size={13} />
-              </button>
-            </Tooltip>
+            <button
+              type="button"
+              onClick={handleDownload}
+              className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white"
+              aria-label="Download"
+            >
+              <Download size={14} />
+            </button>
           </div>
         </div>
+
       </div>
     </div>
   );
