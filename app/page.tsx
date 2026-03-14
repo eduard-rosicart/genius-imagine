@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { Sparkles } from "lucide-react";
 import {
   Mode,
+  AspectRatio,
   ImageSettings,
   VideoSettings,
   Thread,
@@ -72,6 +73,8 @@ export default function HomePage() {
     prompt: string;
     settings: VideoSettings;
     sourceImageUrl?: string;
+    /** Aspect ratio of the source image, if this is an image-to-video generation */
+    sourceImageAspectRatio?: AspectRatio;
   } | null>(null);
 
   const { threads, upsertThread, clearAll, replaceMessage } = useThreads();
@@ -93,9 +96,16 @@ export default function HomePage() {
         prompt: vPrompt,
         settings,
         sourceImageUrl,
+        sourceImageAspectRatio,
       } = pendingVideoRef.current;
 
-      const newVideo = buildGeneratedVideo(vPrompt, polledVideoUrl, polledDuration, settings);
+      const newVideo = buildGeneratedVideo(
+        vPrompt,
+        polledVideoUrl,
+        polledDuration,
+        settings,
+        sourceImageAspectRatio  // inherit image ratio for image-to-video
+      );
 
       if (existingVideoMsgId) {
         // Append a new version to the existing VideoResultMessage.
@@ -256,6 +266,18 @@ export default function HomePage() {
         ? existingVideoMsg.versions[existingVideoMsg.activeVersionIndex]?.url
         : undefined;
 
+      // If generating from an image, inherit that image's aspect ratio so the
+      // video container matches the source image (xAI uses the image's ratio by default)
+      let sourceImageAspectRatio: AspectRatio | undefined;
+      if (videoFromImageUrl) {
+        const sourceImgMsg = thread.messages.find(
+          (m): m is ImageResultMessageData =>
+            m.type === "image-result" &&
+            m.images.some((img) => img.url === videoFromImageUrl)
+        );
+        sourceImageAspectRatio = sourceImgMsg?.aspectRatio ?? sourceImgMsg?.images[0]?.aspectRatio;
+      }
+
       pendingVideoRef.current = {
         threadId: threadId!,
         loadingMsgId: loadingId,
@@ -263,6 +285,7 @@ export default function HomePage() {
         prompt: text,
         settings: videoSettings,
         sourceImageUrl: videoFromImageUrl ?? undefined,
+        sourceImageAspectRatio,
       };
 
       try {

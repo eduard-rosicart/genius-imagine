@@ -62,13 +62,15 @@ export function buildGeneratedVideo(
   prompt: string,
   url: string,
   duration: number | null,
-  settings: VideoSettings
+  settings: VideoSettings,
+  /** Override aspect ratio (e.g. inherited from source image) */
+  aspectRatioOverride?: AspectRatio
 ): GeneratedVideo {
   return {
     id: generateId(),
     url,
     prompt,
-    aspectRatio: settings.aspectRatio,
+    aspectRatio: aspectRatioOverride ?? settings.aspectRatio,
     resolution: settings.resolution,
     duration: duration ?? settings.duration,
     timestamp: Date.now(),
