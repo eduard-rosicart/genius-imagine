@@ -17,28 +17,53 @@ export async function GET(req: NextRequest) {
 
   try {
     const response = await fetch(`${XAI_BASE_URL}/videos/${requestId}`, {
-      headers: {
-        Authorization: `Bearer ${XAI_API_KEY}`,
-      },
+      headers: { Authorization: `Bearer ${XAI_API_KEY}` },
     });
 
+    // Parse body regardless of status code so we can extract error details
+    const rawText = await response.text();
+    let data: Record<string, unknown> = {};
+    try {
+      data = JSON.parse(rawText);
+    } catch {
+      // not JSON — use raw text as error detail
+    }
+
     if (!response.ok) {
-      const error = await response.text();
-      console.error("xAI video status error:", error);
+      console.error("[video-status] xAI error:", response.status, rawText);
+
+      // Extract a human-readable error message
+      const detail =
+        (data.error as Record<string, unknown>)?.message as string ??
+        data.message as string ??
+        data.error as string ??
+        rawText ??
+        "Unknown error";
+
+      // Treat 400 / 404 as a terminal failure so the client stops polling
       return NextResponse.json(
-        { error: "Failed to get video status", details: error },
-        { status: response.status }
+        {
+          status: "failed",
+          error: detail,
+          http_status: response.status,
+        },
+        { status: 200 } // Return 200 so the polling client reads the body
       );
     }
 
-    const data = await response.json();
+    const videoStatus = data.status as string;
+    const videoUrl = (data.video as Record<string, unknown>)?.url as string ?? null;
+    const duration = (data.video as Record<string, unknown>)?.duration as number ?? null;
+    const moderated = (data.video as Record<string, unknown>)?.respect_moderation as boolean ?? true;
+
     return NextResponse.json({
-      status: data.status,
-      video_url: data.video?.url ?? null,
-      duration: data.video?.duration ?? null,
+      status: videoStatus,         // "pending" | "done" | "expired" | "failed"
+      video_url: videoUrl,
+      duration,
+      moderated,
     });
   } catch (err) {
-    console.error("Video status error:", err);
+    console.error("[video-status] internal error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

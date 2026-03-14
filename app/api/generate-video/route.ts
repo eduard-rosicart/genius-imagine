@@ -24,8 +24,18 @@ export async function POST(req: NextRequest) {
     if (duration) genBody.duration = duration;
     if (aspect_ratio) genBody.aspect_ratio = aspect_ratio;
     if (resolution) genBody.resolution = resolution;
-    if (image_url) genBody.image = { url: image_url, type: "image_url" };
-    if (video_url) genBody.video = { url: video_url, type: "video_url" };
+
+    // xAI only accepts ONE of: image OR video — never both.
+    // Priority: if a video URL is provided, use video editing mode.
+    // Otherwise, if an image URL is provided, use image-to-video mode.
+    if (video_url) {
+      genBody.video = { url: video_url, type: "video_url" };
+    } else if (image_url) {
+      genBody.image = { url: image_url, type: "image_url" };
+    }
+    // If neither: pure text-to-video
+
+    console.log("[generate-video] body keys:", Object.keys(genBody));
 
     const response = await fetch(`${XAI_BASE_URL}/videos/generations`, {
       method: "POST",
@@ -37,10 +47,17 @@ export async function POST(req: NextRequest) {
     });
 
     if (!response.ok) {
-      const error = await response.text();
-      console.error("xAI video generation error:", error);
+      const errorText = await response.text();
+      console.error("[generate-video] xAI error:", response.status, errorText);
+      let errorMsg = "Video generation failed";
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorMsg = errorJson.error?.message ?? errorJson.message ?? errorJson.error ?? errorMsg;
+      } catch {
+        errorMsg = errorText || errorMsg;
+      }
       return NextResponse.json(
-        { error: "Video generation failed", details: error },
+        { error: errorMsg, status: response.status },
         { status: response.status }
       );
     }
@@ -48,7 +65,7 @@ export async function POST(req: NextRequest) {
     const data = await response.json();
     return NextResponse.json({ request_id: data.request_id });
   } catch (err) {
-    console.error("Generate video error:", err);
+    console.error("[generate-video] internal error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

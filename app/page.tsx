@@ -87,7 +87,14 @@ export default function HomePage() {
   } | null>(null);
 
   const { threads, upsertThread, clearAll, replaceMessage } = useThreads();
-  const { status: pollStatus, videoUrl: polledVideoUrl, videoDuration: polledDuration, startPolling, reset: resetPolling } = useVideoPolling();
+  const {
+    status: pollStatus,
+    videoUrl: polledVideoUrl,
+    videoDuration: polledDuration,
+    errorMessage: pollErrorMessage,
+    startPolling,
+    reset: resetPolling,
+  } = useVideoPolling();
 
   // ── Polling resolution ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -133,8 +140,8 @@ export default function HomePage() {
       pendingVideoRef.current = null;
       setGenStatus("idle");
       resetPolling();
-    } else if (pollStatus === "expired" || pollStatus === "error") {
-      setGenError("Video generation failed or timed out. Please try again.");
+    } else if (pollStatus === "failed" || pollStatus === "expired" || pollStatus === "error") {
+      setGenError(pollErrorMessage ?? "Video generation failed. Please try again.");
       setGenStatus("error");
       if (pendingVideoRef.current) {
         const { threadId, loadingMsgId } = pendingVideoRef.current;
@@ -151,7 +158,7 @@ export default function HomePage() {
       resetPolling();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pollStatus, polledVideoUrl]);
+  }, [pollStatus, polledVideoUrl, pollErrorMessage]);
 
   // ── Submit ────────────────────────────────────────────────────────────────────
   const handleSubmit = useCallback(async () => {
@@ -205,11 +212,18 @@ export default function HomePage() {
       if (origin) {
         originAspectRatio = origin.aspectRatio;
         if (origin.type === "image") {
+          // Image-to-video: pass the image URL only
           apiImageUrl = origin.imageUrl;
         } else {
-          // video-frame: try captured frame first, then fall back to video URL
-          apiImageUrl = origin.imageUrl;   // captured JPEG data URL (may be undefined if CORS failed)
-          apiVideoUrl = origin.videoUrl;   // raw video URL as fallback
+          // Video-frame: xAI only accepts ONE of image OR video.
+          // If we captured a real JPEG frame (data URL), pass it as image_url.
+          // If canvas was blocked by CORS (imageUrl is undefined), fall back to video_url.
+          if (origin.imageUrl) {
+            apiImageUrl = origin.imageUrl;  // captured frame → image-to-video
+          } else {
+            apiVideoUrl = origin.videoUrl;  // raw video URL → video editing
+          }
+          // NEVER send both
         }
       }
 
