@@ -14,10 +14,11 @@ export type AspectRatio =
 export type ImageResolution = "1k" | "2k";
 export type VideoResolution = "480p" | "720p";
 
+// ─── Generation Settings ──────────────────────────────────────────────────────
+
 export interface ImageSettings {
   aspectRatio: AspectRatio;
   resolution: ImageResolution;
-  n: number;
 }
 
 export interface VideoSettings {
@@ -26,45 +27,108 @@ export interface VideoSettings {
   duration: number;
 }
 
+// ─── Generated Media ──────────────────────────────────────────────────────────
+
 export interface GeneratedImage {
   url: string;
-  prompt: string;
-  timestamp: number;
   aspectRatio: AspectRatio;
 }
 
 export interface GeneratedVideo {
+  id: string;            // version id
   url: string;
   prompt: string;
-  timestamp: number;
-  duration: number;
   aspectRatio: AspectRatio;
   resolution: VideoResolution;
+  duration: number;
+  timestamp: number;
 }
+
+// ─── Thread / Message model ───────────────────────────────────────────────────
+
+export type MessageType =
+  | "prompt"
+  | "image-result"
+  | "image-loading"
+  | "video-result"
+  | "video-loading";
+
+export interface PromptMessageData {
+  id: string;
+  type: "prompt";
+  text: string;
+  timestamp: number;
+}
+
+export interface ImageLoadingMessageData {
+  id: string;
+  type: "image-loading";
+  prompt: string;
+  aspectRatio: AspectRatio;
+  timestamp: number;
+}
+
+export interface ImageResultMessageData {
+  id: string;
+  type: "image-result";
+  prompt: string;
+  images: GeneratedImage[];          // always 4
+  selectedIndex: number;             // which image is highlighted in the detail panel
+  aspectRatio: AspectRatio;
+  timestamp: number;
+}
+
+export interface VideoLoadingMessageData {
+  id: string;
+  type: "video-loading";
+  prompt: string;
+  sourceImageUrl?: string;
+  aspectRatio: AspectRatio;
+  timestamp: number;
+}
+
+export interface VideoResultMessageData {
+  id: string;
+  type: "video-result";
+  prompt: string;
+  versions: GeneratedVideo[];        // each iteration adds a version
+  activeVersionIndex: number;
+  sourceImageUrl?: string;
+  timestamp: number;
+}
+
+export type ChatMessage =
+  | PromptMessageData
+  | ImageLoadingMessageData
+  | ImageResultMessageData
+  | VideoLoadingMessageData
+  | VideoResultMessageData;
+
+export interface Thread {
+  id: string;
+  title: string;          // first prompt, truncated
+  thumbnail?: string;     // first generated image URL
+  createdAt: number;
+  updatedAt: number;
+  messages: ChatMessage[];
+}
+
+// ─── Pending generation state ─────────────────────────────────────────────────
 
 export type GenerationStatus =
   | "idle"
-  | "loading"
-  | "polling"
-  | "done"
+  | "generating-image"
+  | "generating-video"   // waiting for request_id
+  | "polling-video"      // polling until video is ready
   | "error";
 
-export interface HistoryItem {
-  id: string;
-  mode: Mode;
-  prompt: string;
-  timestamp: number;
-  thumbnail?: string;
-  images?: GeneratedImage[];
-  video?: GeneratedVideo;
-}
+// ─── API request bodies ───────────────────────────────────────────────────────
 
 export interface GenerateImageRequest {
   prompt: string;
-  n?: number;
   aspect_ratio?: AspectRatio;
   resolution?: ImageResolution;
-  image?: string; // base64 for editing
+  image?: string;   // base64 / data-url for editing
 }
 
 export interface GenerateVideoRequest {
@@ -73,5 +137,4 @@ export interface GenerateVideoRequest {
   aspect_ratio?: AspectRatio;
   resolution?: VideoResolution;
   image_url?: string;
-  video_url?: string;
 }

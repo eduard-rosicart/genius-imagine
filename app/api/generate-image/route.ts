@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { prompt, n = 1, aspect_ratio, resolution, image } = body;
+    const { prompt, n = 4, aspect_ratio, resolution, image } = body;
 
     if (!prompt) {
       return NextResponse.json({ error: "Prompt is required" }, { status: 400 });

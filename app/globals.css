@@ -3,13 +3,6 @@
 :root {
   --background: #1e1f22;
   --foreground: #e8e8e8;
-  --surface: #2a2b2e;
-  --surface-hover: #333438;
-  --border: #3a3b3e;
-  --accent: #8b5cf6;
-  --accent-hover: #7c3aed;
-  --muted: #9ca3af;
-  --input-bg: #2a2b2e;
 }
 
 @theme inline {
@@ -21,8 +14,7 @@
   box-sizing: border-box;
 }
 
-html,
-body {
+html, body {
   height: 100%;
   margin: 0;
   padding: 0;
@@ -33,79 +25,57 @@ body {
   color: var(--foreground);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: #3a3b3e;
-  border-radius: 3px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #4a4b4e;
-}
+/* Scrollbar */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #3a3b3e; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #4a4b4e; }
 
-/* Textarea auto-resize */
-textarea {
-  resize: none;
-  field-sizing: content;
-}
-
-/* Smooth transitions */
-* {
-  transition-property: color, background-color, border-color, opacity;
-  transition-duration: 150ms;
-  transition-timing-function: ease;
-}
-
-/* Disable transitions on layout changes */
-.no-transition,
-.no-transition * {
-  transition: none !important;
-}
-
-/* Loading animation */
+/* Skeleton shimmer */
 @keyframes shimmer {
   0% { background-position: -200% 0; }
   100% { background-position: 200% 0; }
 }
 
 .shimmer {
-  background: linear-gradient(
-    90deg,
-    #2a2b2e 25%,
-    #333438 50%,
-    #2a2b2e 75%
-  );
+  background: linear-gradient(90deg, #262728 25%, #2e2f32 50%, #262728 75%);
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
 }
 
-@keyframes spin-slow {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-.spin-slow {
-  animation: spin-slow 2s linear infinite;
-}
-
+/* Pulse */
 @keyframes pulse-soft {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  50% { opacity: 0.4; }
+}
+.pulse-soft { animation: pulse-soft 2s ease-in-out infinite; }
+
+/* Slide in from right */
+@keyframes slideInRight {
+  from { transform: translateX(20px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
 }
 
-.pulse-soft {
-  animation: pulse-soft 2s ease-in-out infinite;
+/* Slide in from bottom */
+@keyframes slideInUp {
+  from { transform: translateY(8px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
 }
 
-/* Video progress bar */
-video::-webkit-media-controls {
-  background: rgba(0, 0, 0, 0.5);
+/* Fade in */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Dot bounce for loading */
+@keyframes pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.3); opacity: 0.6; }
+}
+
+textarea {
+  resize: none;
 }

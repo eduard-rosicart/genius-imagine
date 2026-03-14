@@ -1,19 +1,15 @@
 "use client";
 
 import { useRef, KeyboardEvent, useEffect } from "react";
-import { ArrowUp, Loader2 } from "lucide-react";
+import { ArrowUp, Loader2, Image as ImageIcon, X, Film } from "lucide-react";
 import { Mode, ImageSettings, VideoSettings } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { ModeSelector } from "./ModeSelector";
-import { ImageSettingsPanel } from "./ImageSettings";
-import { VideoSettingsPanel } from "./VideoSettings";
-import { ImageUpload } from "./ImageUpload";
+import { SettingsPopover } from "./SettingsPopover";
 
 interface PromptInputProps {
   prompt: string;
   onPromptChange: (value: string) => void;
   mode: Mode;
-  onModeChange: (mode: Mode) => void;
   imageSettings: ImageSettings;
   onImageSettingsChange: (s: ImageSettings) => void;
   videoSettings: VideoSettings;
@@ -22,14 +18,15 @@ interface PromptInputProps {
   onUploadedImageChange: (img: string | null) => void;
   onSubmit: () => void;
   isLoading: boolean;
-  isPolling: boolean;
+  /** If set, shows a "video mode" pill indicating the input will generate a video from this image */
+  videoFromImage?: boolean;
+  onCancelVideoMode?: () => void;
 }
 
 export function PromptInput({
   prompt,
   onPromptChange,
   mode,
-  onModeChange,
   imageSettings,
   onImageSettingsChange,
   videoSettings,
@@ -38,119 +35,152 @@ export function PromptInput({
   onUploadedImageChange,
   onSubmit,
   isLoading,
-  isPolling,
+  videoFromImage,
+  onCancelVideoMode,
 }: PromptInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const isBusy = isLoading || isPolling;
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
-      const scrollH = textareaRef.current.scrollHeight;
-      textareaRef.current.style.height = `${Math.min(scrollH, 200)}px`;
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 180)}px`;
     }
   }, [prompt]);
+
+  // Focus on mount
+  useEffect(() => {
+    textareaRef.current?.focus();
+  }, []);
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (!isBusy && prompt.trim()) {
-        onSubmit();
-      }
+      if (!isLoading && prompt.trim()) onSubmit();
     }
   };
 
+  const handleFile = (file: File) => {
+    if (!file.type.startsWith("image/")) return;
+    const reader = new FileReader();
+    reader.onload = (e) => onUploadedImageChange(e.target?.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  const placeholder =
+    videoFromImage
+      ? "Describe how to animate this image…"
+      : mode === "image"
+      ? "Describe the image you want to create…"
+      : "Describe the video you want to generate…";
+
   return (
     <div className="w-full max-w-3xl mx-auto">
-      <div className="bg-[#2a2b2e] rounded-2xl border border-[#3a3b3e] shadow-2xl overflow-hidden focus-within:border-purple-600/50 transition-colors">
-        {/* Textarea */}
-        <div className="px-4 pt-4 pb-2">
-          <textarea
-            ref={textareaRef}
-            value={prompt}
-            onChange={(e) => onPromptChange(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={
-              mode === "image"
-                ? "Describe the image you want to create..."
-                : "Describe the video you want to generate..."
-            }
-            disabled={isBusy}
-            rows={1}
-            className="w-full bg-transparent text-[#e8e8e8] placeholder-[#4b5563] text-[15px] leading-relaxed outline-none resize-none disabled:opacity-50 max-h-[200px] overflow-y-auto"
-          />
+      {/* Video-from-image pill */}
+      {videoFromImage && (
+        <div className="flex items-center gap-2 mb-2 px-1">
+          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#2a2b2e] border border-[#3a3b3e] text-xs text-[#9ca3af]">
+            <Film size={12} className="text-purple-400" />
+            <span>Generating video from image</span>
+            {onCancelVideoMode && (
+              <button
+                onClick={onCancelVideoMode}
+                className="ml-1 text-[#6b7280] hover:text-white transition-colors"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
         </div>
+      )}
 
+      <div className="bg-[#2a2b2e] rounded-2xl border border-[#3a3b3e] shadow-xl focus-within:border-[#4a4b4e] transition-colors">
         {/* Uploaded image preview */}
         {uploadedImage && (
-          <div className="px-4 pb-2">
-            <div className="relative inline-block">
+          <div className="px-4 pt-3">
+            <div className="relative inline-flex items-center gap-2 px-2 py-1.5 rounded-xl bg-[#1e1f22] border border-[#3a3b3e]">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={uploadedImage}
                 alt="Reference"
-                className="h-16 w-auto rounded-lg border border-[#3a3b3e] object-cover"
+                className="w-8 h-8 rounded-lg object-cover"
               />
+              <span className="text-xs text-[#9ca3af]">Reference image</span>
               <button
                 onClick={() => onUploadedImageChange(null)}
-                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-[#1e1f22] border border-[#3a3b3e] flex items-center justify-center text-[#9ca3af] hover:text-white"
+                className="ml-1 text-[#4b5563] hover:text-white transition-colors"
               >
-                ×
+                <X size={13} />
               </button>
             </div>
           </div>
         )}
 
-        {/* Toolbar */}
-        <div className="flex items-center justify-between px-3 pb-3 pt-1 gap-2">
-          {/* Left: Mode + Upload */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <ModeSelector mode={mode} onChange={onModeChange} />
-            <ImageUpload
-              value={uploadedImage}
-              onChange={onUploadedImageChange}
-            />
-          </div>
-
-          {/* Submit */}
+        {/* Input row */}
+        <div className="flex items-end gap-2 px-3 py-3">
+          {/* Attach image button */}
           <button
-            onClick={onSubmit}
-            disabled={isBusy || !prompt.trim()}
-            className={cn(
-              "flex-shrink-0 w-9 h-9 rounded-xl flex items-center justify-center transition-all",
-              prompt.trim() && !isBusy
-                ? "bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-900/30"
-                : "bg-[#1e1f22] text-[#4b5563] cursor-not-allowed"
-            )}
+            onClick={() => fileInputRef.current?.click()}
+            title="Attach image"
+            className="flex-shrink-0 p-2 rounded-xl text-[#6b7280] hover:text-[#9ca3af] hover:bg-[#1e1f22] transition-colors mb-0.5"
           >
-            {isBusy ? (
-              <Loader2 size={16} className="animate-spin" />
-            ) : (
-              <ArrowUp size={16} />
-            )}
+            <ImageIcon size={18} />
           </button>
-        </div>
 
-        {/* Settings bar */}
-        <div className="px-4 pb-3 border-t border-[#1e1f22] pt-2.5">
-          {mode === "image" ? (
-            <ImageSettingsPanel
-              settings={imageSettings}
-              onChange={onImageSettingsChange}
+          {/* Textarea */}
+          <textarea
+            ref={textareaRef}
+            value={prompt}
+            onChange={(e) => onPromptChange(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={placeholder}
+            disabled={isLoading}
+            rows={1}
+            className="flex-1 bg-transparent text-[#e8e8e8] placeholder-[#4b5563] text-[15px] leading-relaxed outline-none resize-none disabled:opacity-50 max-h-[180px] overflow-y-auto py-1"
+          />
+
+          {/* Right actions */}
+          <div className="flex items-center gap-1 flex-shrink-0 mb-0.5">
+            <SettingsPopover
+              mode={videoFromImage ? "video" : mode}
+              imageSettings={imageSettings}
+              onImageSettingsChange={onImageSettingsChange}
+              videoSettings={videoSettings}
+              onVideoSettingsChange={onVideoSettingsChange}
             />
-          ) : (
-            <VideoSettingsPanel
-              settings={videoSettings}
-              onChange={onVideoSettingsChange}
-            />
-          )}
+
+            {/* Submit */}
+            <button
+              onClick={onSubmit}
+              disabled={isLoading || !prompt.trim()}
+              className={cn(
+                "w-9 h-9 rounded-xl flex items-center justify-center transition-all",
+                prompt.trim() && !isLoading
+                  ? "bg-white text-[#1e1f22] hover:bg-[#e8e8e8] shadow"
+                  : "bg-[#1e1f22] text-[#4b5563] cursor-not-allowed"
+              )}
+            >
+              {isLoading ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <ArrowUp size={16} />
+              )}
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Hint */}
-      <p className="text-center text-xs text-[#4b5563] mt-2">
-        Press Enter to generate · Shift+Enter for new line
-      </p>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleFile(file);
+          e.target.value = "";
+        }}
+      />
     </div>
   );
 }
