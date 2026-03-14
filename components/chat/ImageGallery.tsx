@@ -1,23 +1,50 @@
 "use client";
 
 import { useState } from "react";
-import { GeneratedImage } from "@/lib/types";
+import { GeneratedImage, Origin } from "@/lib/types";
 import { getAspectRatioPaddingBottom, cn } from "@/lib/utils";
 import { ImageLightbox } from "@/components/detail/ImageLightbox";
 
 interface ImageGalleryProps {
   images: GeneratedImage[];
+  /** Index highlighted with purple ring (from detail panel). -1 = none */
   selectedIndex: number;
-  /** Single-click → open detail panel */
+  /** Single-click → opens detail panel AND sets as origin */
   onSelect: (index: number) => void;
+  /** Called when user clicks an image to set it as origin */
+  onSelectOrigin: (origin: Origin) => void;
+  /** Label prefix for the origin label, e.g. "Gallery" */
+  galleryLabel?: string;
 }
 
-export function ImageGallery({ images, selectedIndex, onSelect }: ImageGalleryProps) {
+export function ImageGallery({
+  images,
+  selectedIndex,
+  onSelect,
+  onSelectOrigin,
+  galleryLabel = "Image",
+}: ImageGalleryProps) {
   const [loaded, setLoaded] = useState<Record<number, boolean>>({});
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
   const aspectRatio = images[0]?.aspectRatio ?? "1:1";
   const pb = getAspectRatioPaddingBottom(aspectRatio);
+
+  const handleClick = (i: number) => {
+    // Open detail panel
+    onSelect(i);
+    // Also set as origin
+    const img = images[i];
+    if (!img) return;
+    const origin: Origin = {
+      type: "image",
+      thumbnailUrl: img.url,
+      imageUrl: img.url,
+      label: `${galleryLabel} ${i + 1}`,
+      aspectRatio: img.aspectRatio,
+    };
+    onSelectOrigin(origin);
+  };
 
   return (
     <>
@@ -26,7 +53,7 @@ export function ImageGallery({ images, selectedIndex, onSelect }: ImageGalleryPr
           {images.map((img, i) => (
             <button
               key={i}
-              onClick={() => onSelect(i)}
+              onClick={() => handleClick(i)}
               onDoubleClick={(e) => {
                 e.preventDefault();
                 setLightboxIndex(i);
@@ -53,9 +80,7 @@ export function ImageGallery({ images, selectedIndex, onSelect }: ImageGalleryPr
                     loaded[i] ? "opacity-100" : "opacity-0"
                   )}
                 />
-                {/* Hover overlay */}
                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/15 transition-colors duration-150" />
-                {/* Selection indicator */}
                 {selectedIndex === i && (
                   <div className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-purple-500 flex items-center justify-center shadow-lg">
                     <svg width="8" height="6" viewBox="0 0 8 6" fill="none">
@@ -63,7 +88,6 @@ export function ImageGallery({ images, selectedIndex, onSelect }: ImageGalleryPr
                     </svg>
                   </div>
                 )}
-                {/* Double-click hint on hover */}
                 <div className="absolute bottom-1 left-1 right-1 text-center opacity-0 group-hover:opacity-100 transition-opacity">
                   <span className="text-[9px] text-white/60 bg-black/40 px-1.5 py-0.5 rounded">
                     double-click to expand
@@ -75,7 +99,6 @@ export function ImageGallery({ images, selectedIndex, onSelect }: ImageGalleryPr
         </div>
       </div>
 
-      {/* Lightbox */}
       {lightboxIndex !== null && (
         <ImageLightbox
           images={images}

@@ -122,6 +122,25 @@ export type GenerationStatus =
   | "polling-video"      // polling until video is ready
   | "error";
 
+// ─── Origin (source asset for the next generation) ───────────────────────────
+
+export type OriginSourceType = "image" | "video-frame";
+
+export interface Origin {
+  type: OriginSourceType;
+  /** Thumbnail / frame data URL shown in the UI */
+  thumbnailUrl: string;
+  /** URL passed as image_url to the API (image URL or captured frame) */
+  imageUrl?: string;
+  /** URL passed as video_url to the API (when origin is from a video) */
+  videoUrl?: string;
+  /** Human-readable label, e.g. "Image 2" or "Video v1 · end" */
+  label: string;
+  aspectRatio: AspectRatio;
+  /** For video-frame origins: which position was captured */
+  framePosition?: "start" | "middle" | "end";
+}
+
 // ─── API request bodies ───────────────────────────────────────────────────────
 
 export interface GenerateImageRequest {

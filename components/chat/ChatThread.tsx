@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { ChatMessage, ImageResultMessageData } from "@/lib/types";
+import { ChatMessage, Origin } from "@/lib/types";
 import { PromptMessage } from "./PromptMessage";
 import { ImageLoadingMessage } from "./ImageLoadingMessage";
 import { ImageGallery } from "./ImageGallery";
@@ -14,6 +14,7 @@ interface ChatThreadProps {
   selectedImageMessageId?: string;
   selectedImageIndex?: number;
   onVideoVersionChange: (messageId: string, versionIndex: number) => void;
+  onSelectOrigin: (origin: Origin) => void;
 }
 
 export function ChatThread({
@@ -22,10 +23,10 @@ export function ChatThread({
   selectedImageMessageId,
   selectedImageIndex = 0,
   onVideoVersionChange,
+  onSelectOrigin,
 }: ChatThreadProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to bottom on new messages
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length]);
@@ -39,7 +40,7 @@ export function ChatThread({
 
           case "image-loading":
             return (
-              <div key={msg.id} className="flex flex-col gap-2">
+              <div key={msg.id}>
                 <ImageLoadingMessage aspectRatio={msg.aspectRatio} />
               </div>
             );
@@ -47,11 +48,13 @@ export function ChatThread({
           case "image-result": {
             const isSelected = selectedImageMessageId === msg.id;
             return (
-              <div key={msg.id} className="flex flex-col gap-1.5">
+              <div key={msg.id}>
                 <ImageGallery
                   images={msg.images}
                   selectedIndex={isSelected ? selectedImageIndex : -1}
                   onSelect={(i) => onSelectImage(msg.id, i)}
+                  onSelectOrigin={onSelectOrigin}
+                  galleryLabel="Image"
                 />
               </div>
             );
@@ -59,17 +62,18 @@ export function ChatThread({
 
           case "video-loading":
             return (
-              <div key={msg.id} className="flex flex-col gap-2">
+              <div key={msg.id}>
                 <VideoLoadingMessage />
               </div>
             );
 
           case "video-result":
             return (
-              <div key={msg.id} className="flex flex-col gap-2">
+              <div key={msg.id}>
                 <VideoResultMessage
                   message={msg}
                   onVersionChange={onVideoVersionChange}
+                  onSelectOrigin={onSelectOrigin}
                 />
               </div>
             );

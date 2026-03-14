@@ -1,9 +1,10 @@
 "use client";
 
 import { useRef, KeyboardEvent, useEffect } from "react";
-import { ArrowUp, Loader2, Image as ImageIcon, X, Film } from "lucide-react";
+import { ArrowUp, Loader2, Image as ImageIcon, Film } from "lucide-react";
 import {
   Mode,
+  Origin,
   ImageSettings,
   VideoSettings,
   AspectRatio,
@@ -11,6 +12,7 @@ import {
   VideoResolution,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { OriginIndicator } from "./OriginIndicator";
 
 // ─── Inline settings options ───────────────────────────────────────────────────
 
@@ -47,7 +49,7 @@ function Divider() {
   return <div className="w-px h-3 bg-[#3a3b3e] flex-shrink-0" />;
 }
 
-// ─── Main component ────────────────────────────────────────────────────────────
+// ─── Props ─────────────────────────────────────────────────────────────────────
 
 interface PromptInputProps {
   prompt: string;
@@ -58,13 +60,11 @@ interface PromptInputProps {
   onImageSettingsChange: (s: ImageSettings) => void;
   videoSettings: VideoSettings;
   onVideoSettingsChange: (s: VideoSettings) => void;
-  uploadedImage: string | null;
-  onUploadedImageChange: (img: string | null) => void;
+  /** The active origin for the next generation (image or video frame) */
+  origin: Origin | null;
+  onClearOrigin: () => void;
   onSubmit: () => void;
   isLoading: boolean;
-  /** When true, the input is locked to video-from-image mode */
-  videoFromImage?: boolean;
-  onCancelVideoMode?: () => void;
 }
 
 export function PromptInput({
@@ -76,15 +76,12 @@ export function PromptInput({
   onImageSettingsChange,
   videoSettings,
   onVideoSettingsChange,
-  uploadedImage,
-  onUploadedImageChange,
+  origin,
+  onClearOrigin,
   onSubmit,
   isLoading,
-  videoFromImage,
-  onCancelVideoMode,
 }: PromptInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -105,78 +102,22 @@ export function PromptInput({
     }
   };
 
-  const handleFile = (file: File) => {
-    if (!file.type.startsWith("image/")) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => onUploadedImageChange(ev.target?.result as string);
-    reader.readAsDataURL(file);
-  };
-
-  const effectiveMode = videoFromImage ? "video" : mode;
-
   const placeholder =
-    videoFromImage
-      ? "Describe how to animate this image…"
-      : mode === "image"
+    mode === "image"
       ? "Describe the image you want to create…"
       : "Describe the video you want to generate…";
 
   return (
     <div className="w-full max-w-3xl mx-auto">
-      {/* Video-from-image context pill */}
-      {videoFromImage && (
-        <div className="flex items-center gap-2 mb-2 px-1">
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#2a2b2e] border border-[#3a3b3e] text-xs text-[#9ca3af]">
-            <Film size={11} className="text-purple-400" />
-            <span>Animating from image</span>
-            {onCancelVideoMode && (
-              <button
-                onClick={onCancelVideoMode}
-                className="ml-1 text-[#6b7280] hover:text-white transition-colors"
-              >
-                <X size={11} />
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
       <div className="bg-[#2a2b2e] rounded-2xl border border-[#3a3b3e] shadow-xl focus-within:border-[#4a4b4e] transition-colors">
 
-        {/* Uploaded image preview */}
-        {uploadedImage && (
-          <div className="px-3 pt-3">
-            <div className="relative inline-flex items-center gap-2 px-2 py-1.5 rounded-xl bg-[#1e1f22] border border-[#3a3b3e]">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={uploadedImage}
-                alt="Reference"
-                className="w-7 h-7 rounded-lg object-cover"
-              />
-              <span className="text-xs text-[#9ca3af]">Reference image</span>
-              <button
-                onClick={() => onUploadedImageChange(null)}
-                className="ml-1 text-[#4b5563] hover:text-white transition-colors"
-              >
-                <X size={12} />
-              </button>
-            </div>
-          </div>
+        {/* ── Origin indicator (shown when there's an active source asset) ── */}
+        {origin && (
+          <OriginIndicator origin={origin} onClear={onClearOrigin} />
         )}
 
-        {/* Textarea + send row */}
+        {/* ── Textarea + send ── */}
         <div className="flex items-end gap-2 px-3 py-3">
-          {/* Attach image */}
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            title="Attach image"
-            className="flex-shrink-0 p-2 rounded-xl text-[#6b7280] hover:text-[#9ca3af] hover:bg-[#1e1f22] transition-colors mb-0.5"
-          >
-            <ImageIcon size={17} />
-          </button>
-
-          {/* Textarea */}
           <textarea
             ref={textareaRef}
             value={prompt}
@@ -209,38 +150,30 @@ export function PromptInput({
         </div>
 
         {/* ── Inline settings bar ── */}
-        <div className="px-3 pb-3 pt-0 flex items-center gap-1.5 flex-wrap border-t border-[#1e1f22] pt-2.5">
+        <div className="px-3 pb-3 flex items-center gap-1.5 flex-wrap border-t border-[#1e1f22] pt-2.5">
+          {/* Mode */}
+          <SettingChip active={mode === "image"} onClick={() => onModeChange("image")}>
+            <span className="flex items-center gap-1">
+              <ImageIcon size={10} />
+              Image
+            </span>
+          </SettingChip>
+          <SettingChip active={mode === "video"} onClick={() => onModeChange("video")}>
+            <span className="flex items-center gap-1">
+              <Film size={10} />
+              Video
+            </span>
+          </SettingChip>
 
-          {/* Mode selector — only if not locked to video-from-image */}
-          {!videoFromImage && (
-            <>
-              <SettingChip active={mode === "image"} onClick={() => onModeChange("image")}>
-                <span className="flex items-center gap-1">
-                  <ImageIcon size={10} />
-                  Image
-                </span>
-              </SettingChip>
-              <SettingChip active={mode === "video"} onClick={() => onModeChange("video")}>
-                <span className="flex items-center gap-1">
-                  <Film size={10} />
-                  Video
-                </span>
-              </SettingChip>
-              <Divider />
-            </>
-          )}
+          <Divider />
 
           {/* Aspect ratio */}
-          {(effectiveMode === "image" ? IMAGE_RATIOS : VIDEO_RATIOS).map((r) => (
+          {(mode === "image" ? IMAGE_RATIOS : VIDEO_RATIOS).map((r) => (
             <SettingChip
               key={r}
-              active={
-                effectiveMode === "image"
-                  ? imageSettings.aspectRatio === r
-                  : videoSettings.aspectRatio === r
-              }
+              active={mode === "image" ? imageSettings.aspectRatio === r : videoSettings.aspectRatio === r}
               onClick={() =>
-                effectiveMode === "image"
+                mode === "image"
                   ? onImageSettingsChange({ ...imageSettings, aspectRatio: r })
                   : onVideoSettingsChange({ ...videoSettings, aspectRatio: r })
               }
@@ -252,7 +185,7 @@ export function PromptInput({
           <Divider />
 
           {/* Video: duration */}
-          {effectiveMode === "video" && (
+          {mode === "video" && (
             <>
               {VIDEO_DURATIONS.map((d) => (
                 <SettingChip
@@ -267,8 +200,8 @@ export function PromptInput({
             </>
           )}
 
-          {/* Quality / resolution */}
-          {effectiveMode === "image"
+          {/* Quality */}
+          {mode === "image"
             ? (["1k", "2k"] as ImageResolution[]).map((r) => (
                 <SettingChip
                   key={r}
@@ -289,18 +222,6 @@ export function PromptInput({
               ))}
         </div>
       </div>
-
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) handleFile(file);
-          e.target.value = "";
-        }}
-      />
     </div>
   );
 }
