@@ -13,32 +13,30 @@ export function VideoResultMessage({ message, onVersionChange }: VideoResultMess
   const activeVideo = message.versions[message.activeVersionIndex];
   if (!activeVideo) return null;
 
-  const hasMultiple = message.versions.length > 1;
-
   return (
     <div className="w-full">
-      {/* Player + version strip side by side */}
-      <div className="flex items-start gap-2">
-        {/* Video player — grows to fit aspect ratio */}
-        <div className="flex-shrink-0">
-          <VideoPlayer
-            url={activeVideo.url}
-            aspectRatio={activeVideo.aspectRatio}
-          />
-        </div>
+      {/*
+        Layout: video on the left, version strip on the right.
+        We use inline-flex so both items shrink-wrap to their natural sizes
+        instead of stretching to fill the container width.
+      */}
+      <div className="inline-flex items-start gap-2">
+        {/* Video player */}
+        <VideoPlayer
+          url={activeVideo.url}
+          aspectRatio={activeVideo.aspectRatio}
+        />
 
-        {/* Version nav — right side, always visible */}
-        {hasMultiple && (
-          <VideoVersionNav
-            versions={message.versions}
-            activeIndex={message.activeVersionIndex}
-            onSelect={(i) => onVersionChange(message.id, i)}
-          />
-        )}
+        {/* Version nav — right strip, always shown when versions exist */}
+        <VideoVersionNav
+          versions={message.versions}
+          activeIndex={message.activeVersionIndex}
+          onSelect={(i) => onVersionChange(message.id, i)}
+        />
       </div>
 
-      {hasMultiple && (
-        <p className="text-[11px] text-[#4b5563] mt-1.5 ml-0.5">
+      {message.versions.length > 1 && (
+        <p className="text-[11px] text-[#4b5563] mt-1">
           v{message.activeVersionIndex + 1} of {message.versions.length}
         </p>
       )}

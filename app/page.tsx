@@ -98,32 +98,39 @@ export default function HomePage() {
       const newVideo = buildGeneratedVideo(vPrompt, polledVideoUrl, polledDuration, settings);
 
       if (existingVideoMsgId) {
-        // Append a new version to the existing VideoResultMessage
-        const currentThread = threads.find((t) => t.id === threadId);
-        if (currentThread) {
-          const existingMsg = currentThread.messages.find(
+        // Append a new version to the existing VideoResultMessage.
+        // Read from activeMessages (current state) to avoid stale closures.
+        setActiveMessages((prev) => {
+          const existingMsg = prev.find(
             (m) => m.id === existingVideoMsgId
           ) as VideoResultMessageData | undefined;
+          if (!existingMsg) return prev;
 
-          if (existingMsg) {
-            const updatedMsg: VideoResultMessageData = {
-              ...existingMsg,
-              versions: [...existingMsg.versions, newVideo],
-              activeVersionIndex: existingMsg.versions.length,
-            };
-            const updatedThread: Thread = {
+          const updatedMsg: VideoResultMessageData = {
+            ...existingMsg,
+            versions: [...existingMsg.versions, newVideo],
+            activeVersionIndex: existingMsg.versions.length,
+          };
+
+          const newMessages = prev
+            .filter((m) => m.id !== loadingMsgId)
+            .map((m) => (m.id === existingVideoMsgId ? updatedMsg : m));
+
+          // Persist to storage as a side effect inside the setter (safe with functional update)
+          const currentThread = threads.find((t) => t.id === threadId);
+          if (currentThread) {
+            upsertThread({
               ...currentThread,
-              messages: currentThread.messages
-                .filter((m) => m.id !== loadingMsgId)
-                .map((m) => (m.id === existingVideoMsgId ? updatedMsg : m)),
+              messages: newMessages,
               updatedAt: Date.now(),
-            };
-            upsertThread(updatedThread);
-            if (activeThreadId === threadId) setActiveMessages([...updatedThread.messages]);
+            });
           }
-        }
+
+          return newMessages;
+        });
       } else {
-        // First video — replace loading placeholder with result
+        // First video — replace loading placeholder with result.
+        // Use activeMessages (current React state) instead of threads (stale closure).
         const videoMsg: VideoResultMessageData = {
           id: generateId(),
           type: "video-result",
@@ -133,13 +140,13 @@ export default function HomePage() {
           sourceImageUrl,
           timestamp: Date.now(),
         };
+        // Persist to storage
         replaceMessage(threadId, loadingMsgId, videoMsg);
+        // Update local display state immediately, without reading stale threads
         if (activeThreadId === threadId) {
-          const t = threads.find((tt) => tt.id === threadId);
-          if (t) {
-            const msgs = t.messages.map((m) => (m.id === loadingMsgId ? videoMsg : m));
-            setActiveMessages([...msgs]);
-          }
+          setActiveMessages((prev) =>
+            prev.map((m) => (m.id === loadingMsgId ? videoMsg : m))
+          );
         }
       }
 
@@ -151,15 +158,16 @@ export default function HomePage() {
       setGenStatus("error");
       if (pendingVideoRef.current) {
         const { threadId, loadingMsgId } = pendingVideoRef.current;
-        const currentThread = threads.find((t) => t.id === threadId);
-        if (currentThread) {
-          const updatedThread: Thread = {
-            ...currentThread,
-            messages: currentThread.messages.filter((m) => m.id !== loadingMsgId),
-            updatedAt: Date.now(),
-          };
-          upsertThread(updatedThread);
-          if (activeThreadId === threadId) setActiveMessages([...updatedThread.messages]);
+        if (activeThreadId === threadId) {
+          // Remove the loading message using functional update
+          setActiveMessages((prev) => {
+            const filtered = prev.filter((m) => m.id !== loadingMsgId);
+            const currentThread = threads.find((t) => t.id === threadId);
+            if (currentThread) {
+              upsertThread({ ...currentThread, messages: filtered, updatedAt: Date.now() });
+            }
+            return filtered;
+          });
         }
       }
       pendingVideoRef.current = null;
