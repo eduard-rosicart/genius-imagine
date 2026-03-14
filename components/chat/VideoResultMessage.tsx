@@ -13,22 +13,33 @@ export function VideoResultMessage({ message, onVersionChange }: VideoResultMess
   const activeVideo = message.versions[message.activeVersionIndex];
   if (!activeVideo) return null;
 
+  const hasMultiple = message.versions.length > 1;
+
   return (
     <div className="w-full">
-      <div className="relative max-w-[520px]">
-        <VideoVersionNav
-          versions={message.versions}
-          activeIndex={message.activeVersionIndex}
-          onSelect={(i) => onVersionChange(message.id, i)}
-        />
-        <VideoPlayer
-          url={activeVideo.url}
-          aspectRatio={activeVideo.aspectRatio}
-        />
+      {/* Player + version strip side by side */}
+      <div className="flex items-start gap-2">
+        {/* Video player — grows to fit aspect ratio */}
+        <div className="flex-shrink-0">
+          <VideoPlayer
+            url={activeVideo.url}
+            aspectRatio={activeVideo.aspectRatio}
+          />
+        </div>
+
+        {/* Version nav — right side, always visible */}
+        {hasMultiple && (
+          <VideoVersionNav
+            versions={message.versions}
+            activeIndex={message.activeVersionIndex}
+            onSelect={(i) => onVersionChange(message.id, i)}
+          />
+        )}
       </div>
-      {message.versions.length > 1 && (
-        <p className="text-xs text-[#6b7280] mt-1.5 ml-0.5">
-          Version {message.activeVersionIndex + 1} of {message.versions.length} · hover left edge to switch
+
+      {hasMultiple && (
+        <p className="text-[11px] text-[#4b5563] mt-1.5 ml-0.5">
+          v{message.activeVersionIndex + 1} of {message.versions.length}
         </p>
       )}
     </div>

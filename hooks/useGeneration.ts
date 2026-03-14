@@ -36,7 +36,8 @@ export async function generateImages(
 export async function startVideoGeneration(
   prompt: string,
   settings: VideoSettings,
-  uploadedImage?: string
+  uploadedImage?: string,
+  sourceVideoUrl?: string
 ): Promise<string> {
   const res = await fetch("/api/generate-video", {
     method: "POST",
@@ -47,6 +48,7 @@ export async function startVideoGeneration(
       aspect_ratio: settings.aspectRatio,
       resolution: settings.resolution,
       image_url: uploadedImage,
+      video_url: sourceVideoUrl,
     }),
   });
 

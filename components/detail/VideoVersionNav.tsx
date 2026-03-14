@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { GeneratedVideo } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -10,55 +9,49 @@ interface VideoVersionNavProps {
   onSelect: (index: number) => void;
 }
 
+/**
+ * Vertical strip on the RIGHT side of the video player.
+ * Always visible when there's more than 1 version.
+ * Each item shows a video snapshot thumbnail + version label.
+ */
 export function VideoVersionNav({ versions, activeIndex, onSelect }: VideoVersionNavProps) {
-  const [hovered, setHovered] = useState(false);
-
   if (versions.length <= 1) return null;
 
   return (
-    <div
-      className="absolute left-0 top-0 bottom-0 flex items-center z-10"
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-    >
-      {/* Hover trigger zone */}
-      <div className="w-10 h-full" />
-
-      {/* Nav panel */}
-      <div
-        className={cn(
-          "absolute left-2 flex flex-col gap-1.5 transition-all duration-200",
-          hovered ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-2 pointer-events-none"
-        )}
-      >
-        {versions.map((v, i) => (
-          <button
-            key={v.id}
-            onClick={() => onSelect(i)}
-            title={`Version ${i + 1}`}
-            className={cn(
-              "group relative w-9 h-9 rounded-lg overflow-hidden border-2 transition-all",
-              activeIndex === i
-                ? "border-purple-500 shadow-lg shadow-purple-900/40"
-                : "border-[#3a3b3e] hover:border-[#6b7280]"
-            )}
-          >
-            <video
-              src={v.url}
-              muted
-              playsInline
-              preload="metadata"
-              className="w-full h-full object-cover"
-            />
-            <div className={cn(
-              "absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white",
-              "bg-black/60 group-hover:bg-black/40 transition-colors"
-            )}>
+    <div className="flex flex-col gap-1.5 pl-2 overflow-y-auto max-h-full py-0.5">
+      {versions.map((v, i) => (
+        <button
+          key={v.id}
+          onClick={() => onSelect(i)}
+          title={`Version ${i + 1}`}
+          className={cn(
+            "group relative w-11 flex-shrink-0 rounded-lg overflow-hidden border-2 transition-all",
+            "aspect-[9/16]",           // default thumbnail shape; video scales inside
+            activeIndex === i
+              ? "border-purple-500 shadow-lg shadow-purple-900/50"
+              : "border-[#3a3b3e] hover:border-[#6b7280] opacity-60 hover:opacity-100"
+          )}
+        >
+          {/* Video thumbnail */}
+          <video
+            src={v.url}
+            muted
+            playsInline
+            preload="metadata"
+            className="absolute inset-0 w-full h-full object-cover"
+          />
+          {/* Overlay with version number */}
+          <div className="absolute inset-0 flex flex-col items-center justify-end bg-gradient-to-t from-black/80 to-transparent pb-1">
+            <span className="text-[9px] font-bold text-white leading-none">
               v{i + 1}
-            </div>
-          </button>
-        ))}
-      </div>
+            </span>
+          </div>
+          {/* Active ring glow */}
+          {activeIndex === i && (
+            <div className="absolute inset-0 ring-1 ring-inset ring-purple-400/40 rounded-lg" />
+          )}
+        </button>
+      ))}
     </div>
   );
 }

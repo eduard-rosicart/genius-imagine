@@ -9,6 +9,17 @@ import { AspectRatio } from "@/lib/types";
 interface VideoPlayerProps {
   url: string;
   aspectRatio: AspectRatio;
+  /** Max width override (px). Defaults to auto based on ratio. */
+  maxWidth?: number;
+}
+
+/** Returns the right CSS max-width and aspect-ratio style for a given ratio string */
+function getVideoStyle(ratio: AspectRatio): { maxWidth: string; aspectRatio: string } {
+  const [w, h] = ratio.split(":").map(Number);
+  const isPortrait = h > w;
+  // Portrait: keep narrow so it doesn't stretch; Landscape: wider
+  const maxW = isPortrait ? "min(280px, 100%)" : "min(520px, 100%)";
+  return { maxWidth: maxW, aspectRatio: `${w}/${h}` };
 }
 
 export function VideoPlayer({ url, aspectRatio }: VideoPlayerProps) {
@@ -17,8 +28,7 @@ export function VideoPlayer({ url, aspectRatio }: VideoPlayerProps) {
   const [muted, setMuted] = useState(true);
   const [progress, setProgress] = useState(0);
 
-  const [w, h] = aspectRatio.split(":").map(Number);
-  const paddingBottom = `${(h / w) * 100}%`;
+  const { maxWidth, aspectRatio: cssRatio } = getVideoStyle(aspectRatio);
 
   const togglePlay = () => {
     if (!videoRef.current) return;
@@ -63,8 +73,12 @@ export function VideoPlayer({ url, aspectRatio }: VideoPlayerProps) {
   };
 
   return (
-    <div className="group relative rounded-2xl overflow-hidden bg-black max-w-2xl mx-auto">
-      <div className="relative" style={{ paddingBottom }}>
+    <div
+      className="group relative rounded-2xl overflow-hidden bg-black"
+      style={{ maxWidth, width: "100%" }}
+    >
+      {/* Native aspect-ratio container — no padding-bottom hack needed */}
+      <div className="relative w-full" style={{ aspectRatio: cssRatio }}>
         <video
           ref={videoRef}
           src={url}
@@ -74,7 +88,7 @@ export function VideoPlayer({ url, aspectRatio }: VideoPlayerProps) {
           onTimeUpdate={handleTimeUpdate}
           onEnded={handleEnded}
           onClick={togglePlay}
-          className="absolute inset-0 w-full h-full object-cover cursor-pointer"
+          className="absolute inset-0 w-full h-full object-contain cursor-pointer"
         />
 
         {/* Center play button */}
@@ -83,24 +97,26 @@ export function VideoPlayer({ url, aspectRatio }: VideoPlayerProps) {
             onClick={togglePlay}
             className="absolute inset-0 flex items-center justify-center"
           >
-            <div className="w-16 h-16 rounded-full bg-black/60 backdrop-blur flex items-center justify-center hover:bg-black/80 transition-colors">
-              <Play size={28} className="text-white ml-1" fill="white" />
+            <div className="w-14 h-14 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center hover:bg-black/80 transition-colors">
+              <Play size={24} className="text-white ml-1" fill="white" />
             </div>
           </button>
         )}
 
         {/* Controls overlay */}
-        <div className={cn(
-          "absolute bottom-0 left-0 right-0 transition-opacity duration-200",
-          playing ? "opacity-0 group-hover:opacity-100" : "opacity-100"
-        )}>
+        <div
+          className={cn(
+            "absolute bottom-0 left-0 right-0 transition-opacity duration-200",
+            playing ? "opacity-0 group-hover:opacity-100" : "opacity-100"
+          )}
+        >
           {/* Progress bar */}
           <div
             className="mx-3 mb-2 h-1 bg-white/20 rounded-full cursor-pointer"
             onClick={handleSeek}
           >
             <div
-              className="h-full bg-white rounded-full transition-all"
+              className="h-full bg-white rounded-full transition-none"
               style={{ width: `${progress}%` }}
             />
           </div>
@@ -110,28 +126,28 @@ export function VideoPlayer({ url, aspectRatio }: VideoPlayerProps) {
             <div className="flex items-center gap-2">
               <button
                 onClick={togglePlay}
-                className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
+                className="w-7 h-7 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
               >
                 {playing ? (
-                  <Pause size={14} fill="white" />
+                  <Pause size={13} fill="white" />
                 ) : (
-                  <Play size={14} className="ml-0.5" fill="white" />
+                  <Play size={13} className="ml-0.5" fill="white" />
                 )}
               </button>
               <button
                 onClick={toggleMute}
-                className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
+                className="w-7 h-7 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
               >
-                {muted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+                {muted ? <VolumeX size={13} /> : <Volume2 size={13} />}
               </button>
             </div>
 
-            <Tooltip content="Download video">
+            <Tooltip content="Download video" side="top">
               <button
                 onClick={handleDownload}
-                className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
+                className="w-7 h-7 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
               >
-                <Download size={14} />
+                <Download size={13} />
               </button>
             </Tooltip>
           </div>

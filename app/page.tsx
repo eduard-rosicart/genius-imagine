@@ -10,7 +10,6 @@ import {
   ChatMessage,
   ImageResultMessageData,
   VideoResultMessageData,
-  VideoLoadingMessageData,
   GenerationStatus,
 } from "@/lib/types";
 import { generateId, truncateText } from "@/lib/utils";
@@ -21,11 +20,12 @@ import { useThreads } from "@/hooks/useThreads";
 import { Header } from "@/components/layout/Header";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { ChatThread } from "@/components/chat/ChatThread";
+import { ModeToggle } from "@/components/chat/ModeToggle";
 import { PromptInput } from "@/components/generation/PromptInput";
 import { SuggestionChips } from "@/components/generation/SuggestionChips";
 import { ImageDetailPanel } from "@/components/detail/ImageDetailPanel";
 
-// ─── Default settings ─────────────────────────────────────────────────────────
+// ─── Default settings ──────────────────────────────────────────────────────────
 
 const DEFAULT_IMAGE_SETTINGS: ImageSettings = {
   aspectRatio: "1:1",
@@ -38,10 +38,10 @@ const DEFAULT_VIDEO_SETTINGS: VideoSettings = {
   duration: 5,
 };
 
-// ─── Main Page ─────────────────────────────────────────────────────────────────
+// ─── Page ──────────────────────────────────────────────────────────────────────
 
 export default function HomePage() {
-  // UI state
+  // ── UI ────────────────────────────────────────────────────────────────────────
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [prompt, setPrompt] = useState("");
   const [mode, setMode] = useState<Mode>("image");
@@ -49,22 +49,22 @@ export default function HomePage() {
   const [videoSettings, setVideoSettings] = useState<VideoSettings>(DEFAULT_VIDEO_SETTINGS);
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
 
-  // Thread state
+  // ── Thread ────────────────────────────────────────────────────────────────────
   const [activeThreadId, setActiveThreadId] = useState<string | undefined>(undefined);
   const [activeMessages, setActiveMessages] = useState<ChatMessage[]>([]);
 
-  // Image detail panel state
+  // ── Image detail panel ────────────────────────────────────────────────────────
   const [detailMessageId, setDetailMessageId] = useState<string | undefined>(undefined);
   const [detailImageIndex, setDetailImageIndex] = useState(0);
 
-  // Video-from-image mode
+  // ── Video-from-image ──────────────────────────────────────────────────────────
   const [videoFromImageUrl, setVideoFromImageUrl] = useState<string | null>(null);
 
-  // Generation state
+  // ── Generation ────────────────────────────────────────────────────────────────
   const [genStatus, setGenStatus] = useState<GenerationStatus>("idle");
   const [genError, setGenError] = useState<string | null>(null);
 
-  // Pending video metadata (for when polling completes)
+  // Pending video metadata (resolved when polling completes)
   const pendingVideoRef = useRef<{
     threadId: string;
     loadingMsgId: string;
@@ -74,35 +74,43 @@ export default function HomePage() {
     sourceImageUrl?: string;
   } | null>(null);
 
-  const { threads, upsertThread, removeThread, clearAll, addMessage, replaceMessage } = useThreads();
-  const { status: pollStatus, videoUrl: polledVideoUrl, videoDuration: polledDuration, startPolling, reset: resetPolling } = useVideoPolling();
+  const { threads, upsertThread, clearAll, replaceMessage } = useThreads();
+  const {
+    status: pollStatus,
+    videoUrl: polledVideoUrl,
+    videoDuration: polledDuration,
+    startPolling,
+    reset: resetPolling,
+  } = useVideoPolling();
 
-  // ── Active thread sync ──────────────────────────────────────────────────────
-
-  const refreshMessages = useCallback((threadId: string) => {
-    const t = threads.find((t) => t.id === threadId);
-    if (t) setActiveMessages([...t.messages]);
-  }, [threads]);
-
-  // When polling finishes ─────────────────────────────────────────────────────
+  // ── Polling resolution ────────────────────────────────────────────────────────
   useEffect(() => {
     if (pollStatus === "done" && polledVideoUrl && pendingVideoRef.current) {
-      const { threadId, loadingMsgId, existingVideoMsgId, prompt: vPrompt, settings, sourceImageUrl } = pendingVideoRef.current;
+      const {
+        threadId,
+        loadingMsgId,
+        existingVideoMsgId,
+        prompt: vPrompt,
+        settings,
+        sourceImageUrl,
+      } = pendingVideoRef.current;
 
       const newVideo = buildGeneratedVideo(vPrompt, polledVideoUrl, polledDuration, settings);
 
       if (existingVideoMsgId) {
-        // Append version to existing video message
+        // Append a new version to the existing VideoResultMessage
         const currentThread = threads.find((t) => t.id === threadId);
         if (currentThread) {
-          const existingMsg = currentThread.messages.find((m) => m.id === existingVideoMsgId) as VideoResultMessageData | undefined;
+          const existingMsg = currentThread.messages.find(
+            (m) => m.id === existingVideoMsgId
+          ) as VideoResultMessageData | undefined;
+
           if (existingMsg) {
             const updatedMsg: VideoResultMessageData = {
               ...existingMsg,
               versions: [...existingMsg.versions, newVideo],
               activeVersionIndex: existingMsg.versions.length,
             };
-            // Remove loading message and update video message
             const updatedThread: Thread = {
               ...currentThread,
               messages: currentThread.messages
@@ -115,7 +123,7 @@ export default function HomePage() {
           }
         }
       } else {
-        // First video — replace loading with result
+        // First video — replace loading placeholder with result
         const videoMsg: VideoResultMessageData = {
           id: generateId(),
           type: "video-result",
@@ -129,7 +137,7 @@ export default function HomePage() {
         if (activeThreadId === threadId) {
           const t = threads.find((tt) => tt.id === threadId);
           if (t) {
-            const msgs = t.messages.map((m) => m.id === loadingMsgId ? videoMsg : m);
+            const msgs = t.messages.map((m) => (m.id === loadingMsgId ? videoMsg : m));
             setActiveMessages([...msgs]);
           }
         }
@@ -139,9 +147,8 @@ export default function HomePage() {
       setGenStatus("idle");
       resetPolling();
     } else if (pollStatus === "expired" || pollStatus === "error") {
-      setGenError("Video generation failed or expired. Please try again.");
+      setGenError("Video generation failed or timed out. Please try again.");
       setGenStatus("error");
-      // Remove loading message
       if (pendingVideoRef.current) {
         const { threadId, loadingMsgId } = pendingVideoRef.current;
         const currentThread = threads.find((t) => t.id === threadId);
@@ -158,11 +165,10 @@ export default function HomePage() {
       pendingVideoRef.current = null;
       resetPolling();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pollStatus, polledVideoUrl]);
 
-  // ── Core submit handler ─────────────────────────────────────────────────────
-
+  // ── Submit ────────────────────────────────────────────────────────────────────
   const handleSubmit = useCallback(async () => {
     const text = prompt.trim();
     if (!text || genStatus !== "idle") return;
@@ -170,14 +176,12 @@ export default function HomePage() {
     setGenError(null);
 
     const isVideoMode = videoFromImageUrl !== null || mode === "video";
-    const effectiveSettings = isVideoMode ? videoSettings : imageSettings;
 
-    // Determine thread
+    // ── Resolve / create thread ───────────────────────────────────────────────
     let threadId = activeThreadId;
     let thread: Thread;
 
     if (!threadId) {
-      // Create new thread
       thread = {
         id: generateId(),
         title: truncateText(text, 50),
@@ -190,7 +194,7 @@ export default function HomePage() {
       threadId = thread.id;
     } else {
       thread = threads.find((t) => t.id === threadId) ?? {
-        id: threadId,
+        id: threadId!,
         title: truncateText(text, 50),
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -198,7 +202,7 @@ export default function HomePage() {
       };
     }
 
-    // Add user prompt message
+    // ── Build prompt + loading messages ───────────────────────────────────────
     const promptMsg: ChatMessage = {
       id: generateId(),
       type: "prompt",
@@ -207,45 +211,42 @@ export default function HomePage() {
     };
 
     const loadingId = generateId();
-    const imageAspect = isVideoMode
-      ? videoSettings.aspectRatio
-      : imageSettings.aspectRatio;
-
     const loadingMsg: ChatMessage = isVideoMode
-      ? ({
+      ? {
           id: loadingId,
           type: "video-loading",
           prompt: text,
           sourceImageUrl: videoFromImageUrl ?? undefined,
           aspectRatio: videoSettings.aspectRatio,
           timestamp: Date.now(),
-        } as ChatMessage)
-      : ({
+        }
+      : {
           id: loadingId,
           type: "image-loading",
           prompt: text,
           aspectRatio: imageSettings.aspectRatio,
           timestamp: Date.now(),
-        } as ChatMessage);
+        };
 
-    // Build updated messages for local display
     const newMessages = [...(thread.messages ?? []), promptMsg, loadingMsg];
-    const updatedThread: Thread = {
-      ...thread,
-      messages: newMessages,
-      updatedAt: Date.now(),
-    };
+    const updatedThread: Thread = { ...thread, messages: newMessages, updatedAt: Date.now() };
     upsertThread(updatedThread);
     setActiveMessages([...newMessages]);
     setPrompt("");
 
+    // ── VIDEO path ────────────────────────────────────────────────────────────
     if (isVideoMode) {
       setGenStatus("generating-video");
 
-      // Find if there's already a video result in this thread to append a version
-      const existingVideoMsg = thread.messages.findLast?.(
-        (m) => m.type === "video-result"
-      ) as VideoResultMessageData | undefined;
+      // Find last video result in this thread — to pass its URL as context (point 3)
+      const existingVideoMsg = thread.messages
+        .slice()
+        .reverse()
+        .find((m) => m.type === "video-result") as VideoResultMessageData | undefined;
+
+      const lastVideoUrl = existingVideoMsg
+        ? existingVideoMsg.versions[existingVideoMsg.activeVersionIndex]?.url
+        : undefined;
 
       pendingVideoRef.current = {
         threadId: threadId!,
@@ -260,7 +261,9 @@ export default function HomePage() {
         const requestId = await startVideoGeneration(
           text,
           videoSettings,
-          videoFromImageUrl ?? undefined
+          videoFromImageUrl ?? undefined,
+          // Pass previous video URL as context when no image is being used
+          videoFromImageUrl ? undefined : lastVideoUrl
         );
         setGenStatus("polling-video");
         startPolling(requestId);
@@ -269,7 +272,6 @@ export default function HomePage() {
         const msg = err instanceof Error ? err.message : "Video generation failed";
         setGenError(msg);
         setGenStatus("error");
-        // Remove loading message
         const rollback: Thread = {
           ...updatedThread,
           messages: newMessages.filter((m) => m.id !== loadingId),
@@ -278,33 +280,28 @@ export default function HomePage() {
         setActiveMessages([...rollback.messages]);
         pendingVideoRef.current = null;
       }
+
+    // ── IMAGE path ────────────────────────────────────────────────────────────
     } else {
       setGenStatus("generating-image");
       try {
-        const images = await generateImages(
-          text,
-          imageSettings,
-          uploadedImage ?? undefined
-        );
+        const imgs = await generateImages(text, imageSettings, uploadedImage ?? undefined);
 
         const resultMsg: ImageResultMessageData = {
           id: generateId(),
           type: "image-result",
           prompt: text,
-          images,
+          images: imgs,
           selectedIndex: 0,
           aspectRatio: imageSettings.aspectRatio,
           timestamp: Date.now(),
         };
 
-        // Replace loading with result
-        const finalMessages = newMessages.map((m) =>
-          m.id === loadingId ? resultMsg : m
-        );
+        const finalMessages = newMessages.map((m) => (m.id === loadingId ? resultMsg : m));
         const finalThread: Thread = {
           ...updatedThread,
           messages: finalMessages,
-          thumbnail: updatedThread.thumbnail ?? images[0]?.url,
+          thumbnail: updatedThread.thumbnail ?? imgs[0]?.url,
           updatedAt: Date.now(),
         };
         upsertThread(finalThread);
@@ -337,18 +334,20 @@ export default function HomePage() {
     startPolling,
   ]);
 
-  // ── Thread navigation ───────────────────────────────────────────────────────
-
-  const handleSelectThread = useCallback((thread: Thread) => {
-    setActiveThreadId(thread.id);
-    setActiveMessages([...thread.messages]);
-    setDetailMessageId(undefined);
-    setVideoFromImageUrl(null);
-    setGenStatus("idle");
-    setGenError(null);
-    resetPolling();
-    pendingVideoRef.current = null;
-  }, [resetPolling]);
+  // ── Thread navigation ─────────────────────────────────────────────────────────
+  const handleSelectThread = useCallback(
+    (thread: Thread) => {
+      setActiveThreadId(thread.id);
+      setActiveMessages([...thread.messages]);
+      setDetailMessageId(undefined);
+      setVideoFromImageUrl(null);
+      setGenStatus("idle");
+      setGenError(null);
+      resetPolling();
+      pendingVideoRef.current = null;
+    },
+    [resetPolling]
+  );
 
   const handleNewThread = useCallback(() => {
     setActiveThreadId(undefined);
@@ -363,17 +362,18 @@ export default function HomePage() {
     pendingVideoRef.current = null;
   }, [resetPolling]);
 
-  // ── Image detail panel actions ──────────────────────────────────────────────
-
-  const handleSelectImage = useCallback((messageId: string, index: number) => {
-    if (detailMessageId === messageId && detailImageIndex === index) {
-      // Toggle off
-      setDetailMessageId(undefined);
-    } else {
-      setDetailMessageId(messageId);
-      setDetailImageIndex(index);
-    }
-  }, [detailMessageId, detailImageIndex]);
+  // ── Image detail actions ──────────────────────────────────────────────────────
+  const handleSelectImage = useCallback(
+    (messageId: string, index: number) => {
+      if (detailMessageId === messageId && detailImageIndex === index) {
+        setDetailMessageId(undefined);
+      } else {
+        setDetailMessageId(messageId);
+        setDetailImageIndex(index);
+      }
+    },
+    [detailMessageId, detailImageIndex]
+  );
 
   const handleRemix = useCallback((imageUrl: string) => {
     setUploadedImage(imageUrl);
@@ -390,29 +390,49 @@ export default function HomePage() {
     setPrompt("");
   }, []);
 
-  const handleVideoVersionChange = useCallback((messageId: string, versionIndex: number) => {
-    if (!activeThreadId) return;
-    const currentThread = threads.find((t) => t.id === activeThreadId);
-    if (!currentThread) return;
-    const updatedMessages = currentThread.messages.map((m) =>
-      m.id === messageId && m.type === "video-result"
-        ? { ...m, activeVersionIndex: versionIndex }
-        : m
-    );
-    const updatedThread: Thread = { ...currentThread, messages: updatedMessages, updatedAt: Date.now() };
-    upsertThread(updatedThread);
-    setActiveMessages([...updatedMessages]);
-  }, [activeThreadId, threads, upsertThread]);
+  const handleVideoVersionChange = useCallback(
+    (messageId: string, versionIndex: number) => {
+      if (!activeThreadId) return;
+      const currentThread = threads.find((t) => t.id === activeThreadId);
+      if (!currentThread) return;
+      const updatedMessages = currentThread.messages.map((m) =>
+        m.id === messageId && m.type === "video-result"
+          ? { ...m, activeVersionIndex: versionIndex }
+          : m
+      );
+      const updatedThread: Thread = {
+        ...currentThread,
+        messages: updatedMessages,
+        updatedAt: Date.now(),
+      };
+      upsertThread(updatedThread);
+      setActiveMessages([...updatedMessages]);
+    },
+    [activeThreadId, threads, upsertThread]
+  );
 
-  // ── Detail panel data ───────────────────────────────────────────────────────
-
+  // ── Derived state ─────────────────────────────────────────────────────────────
   const detailMessage = detailMessageId
-    ? (activeMessages.find((m) => m.id === detailMessageId) as ImageResultMessageData | undefined)
+    ? (activeMessages.find((m) => m.id === detailMessageId) as
+        | ImageResultMessageData
+        | undefined)
     : undefined;
 
-  const isLoading = genStatus === "generating-image" || genStatus === "generating-video" || genStatus === "polling-video";
+  const isLoading =
+    genStatus === "generating-image" ||
+    genStatus === "generating-video" ||
+    genStatus === "polling-video";
   const showDetail = !!detailMessage && detailMessage.type === "image-result";
   const isEmpty = activeMessages.length === 0 && !isLoading;
+
+  // When switching mode via ModeToggle, also cancel video-from-image
+  const handleModeChange = useCallback(
+    (m: Mode) => {
+      setMode(m);
+      if (m === "image") setVideoFromImageUrl(null);
+    },
+    []
+  );
 
   return (
     <div className="flex flex-col h-screen bg-[#1e1f22] overflow-hidden">
@@ -433,14 +453,23 @@ export default function HomePage() {
           />
         )}
 
-        {/* Main: chat + detail panel */}
+        {/* Main content */}
         <div className="flex flex-1 overflow-hidden min-h-0">
-          {/* Chat area */}
+          {/* Chat column */}
           <div className="flex flex-col flex-1 overflow-hidden min-h-0">
-            {/* Scrollable message list */}
-            <div className="flex-1 overflow-y-auto min-h-0">
+
+            {/* ── Scrollable chat area ── */}
+            <div className="flex-1 overflow-y-auto min-h-0 relative">
+
+              {/* Mode toggle — floating top-right of chat */}
+              <div className="absolute top-3 right-4 z-20">
+                <ModeToggle
+                  mode={videoFromImageUrl !== null ? "video" : mode}
+                  onChange={handleModeChange}
+                />
+              </div>
+
               {isEmpty ? (
-                // Empty state
                 <div className="flex flex-col items-center justify-center min-h-full gap-8 px-6 py-12">
                   <div className="flex flex-col items-center gap-4">
                     <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-500 to-violet-700 flex items-center justify-center shadow-xl shadow-purple-900/30">
@@ -451,14 +480,13 @@ export default function HomePage() {
                         What will you imagine?
                       </h1>
                       <p className="text-[#6b7280] mt-2 text-base">
-                        Describe an image or video and watch it come to life
+                        {mode === "image"
+                          ? "Describe an image and watch it come to life"
+                          : "Describe a video and watch it come to life"}
                       </p>
                     </div>
                   </div>
-                  <SuggestionChips
-                    mode={mode}
-                    onSelect={(s) => setPrompt(s)}
-                  />
+                  <SuggestionChips mode={mode} onSelect={(s) => setPrompt(s)} />
                 </div>
               ) : (
                 <ChatThread
@@ -486,12 +514,13 @@ export default function HomePage() {
               )}
             </div>
 
-            {/* Input bar */}
+            {/* ── Prompt input ── */}
             <div className="flex-shrink-0 px-4 pb-4 pt-3 border-t border-[#2a2b2e]">
               <PromptInput
                 prompt={prompt}
                 onPromptChange={setPrompt}
                 mode={mode}
+                onModeChange={handleModeChange}
                 imageSettings={imageSettings}
                 onImageSettingsChange={setImageSettings}
                 videoSettings={videoSettings}
@@ -509,13 +538,11 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Image Detail Panel — slides in from right */}
+          {/* ── Image detail panel ── */}
           {showDetail && detailMessage && (
             <div
               className="w-72 flex-shrink-0 border-l border-[#2a2b2e] overflow-hidden"
-              style={{
-                animation: "slideInRight 0.2s ease-out",
-              }}
+              style={{ animation: "slideInRight 0.2s ease-out" }}
             >
               <ImageDetailPanel
                 images={detailMessage.images}
