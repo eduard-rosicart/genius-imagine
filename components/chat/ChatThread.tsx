@@ -10,20 +10,13 @@ import { VideoResultMessage } from "./VideoResultMessage";
 
 interface ChatThreadProps {
   messages: ChatMessage[];
-  onSelectImage: (messageId: string, index: number) => void;
-  selectedImageMessageId?: string;
-  selectedImageIndex?: number;
   onVideoVersionChange: (messageId: string, versionIndex: number) => void;
   onSelectOrigin: (origin: Origin) => void;
-  /** The active origin, used to highlight origin assets in the thread */
   activeOrigin: Origin | null;
 }
 
 export function ChatThread({
   messages,
-  onSelectImage,
-  selectedImageMessageId,
-  selectedImageIndex = 0,
   onVideoVersionChange,
   onSelectOrigin,
   activeOrigin,
@@ -33,6 +26,9 @@ export function ChatThread({
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length]);
+
+  const originImageUrl =
+    activeOrigin?.type === "image" ? activeOrigin.imageUrl : undefined;
 
   return (
     <div className="flex flex-col gap-6 px-4 py-6 max-w-[620px] w-full mx-auto">
@@ -48,25 +44,17 @@ export function ChatThread({
               </div>
             );
 
-          case "image-result": {
-            const isSelected = selectedImageMessageId === msg.id;
-            // Determine which image in this gallery is the active origin
-            const originImageUrl =
-              activeOrigin?.type === "image" ? activeOrigin.imageUrl : undefined;
-
+          case "image-result":
             return (
               <div key={msg.id}>
                 <ImageGallery
                   images={msg.images}
-                  selectedIndex={isSelected ? selectedImageIndex : -1}
-                  onSelect={(i) => onSelectImage(msg.id, i)}
                   onSelectOrigin={onSelectOrigin}
-                  galleryLabel="Image"
                   activeOriginUrl={originImageUrl}
+                  galleryLabel="Image"
                 />
               </div>
             );
-          }
 
           case "video-loading":
             return (
@@ -76,7 +64,6 @@ export function ChatThread({
             );
 
           case "video-result": {
-            // Check if this video message contains the active origin video
             const isOriginVideo =
               activeOrigin?.type === "video-frame" &&
               msg.versions.some((v) => v.url === activeOrigin.videoUrl);

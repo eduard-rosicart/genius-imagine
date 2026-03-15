@@ -25,7 +25,6 @@ import { ChatThread } from "@/components/chat/ChatThread";
 import { ModeToggle } from "@/components/chat/ModeToggle";
 import { PromptInput } from "@/components/generation/PromptInput";
 import { SuggestionChips } from "@/components/generation/SuggestionChips";
-import { ImageDetailPanel } from "@/components/detail/ImageDetailPanel";
 
 // ─── Defaults ──────────────────────────────────────────────────────────────────
 
@@ -64,9 +63,7 @@ export default function HomePage() {
   const [activeThreadId, setActiveThreadId] = useState<string | undefined>(undefined);
   const [activeMessages, setActiveMessages] = useState<ChatMessage[]>([]);
 
-  // ── Image detail panel ────────────────────────────────────────────────────────
-  const [detailMessageId, setDetailMessageId] = useState<string | undefined>(undefined);
-  const [detailImageIndex, setDetailImageIndex] = useState(0);
+  // (detail panel removed — selection handled inline in ImageGallery)
 
   // ── Unified origin state ──────────────────────────────────────────────────────
   // null = no origin (first generation in a fresh thread)
@@ -313,8 +310,6 @@ export default function HomePage() {
   const handleSelectThread = useCallback((thread: Thread) => {
     setActiveThreadId(thread.id);
     setActiveMessages([...thread.messages]);
-    setDetailMessageId(undefined);
-    // Restore origin from the last result in the thread
     setOrigin(deriveOriginFromThread(thread.messages));
     setGenStatus("idle");
     setGenError(null);
@@ -325,7 +320,6 @@ export default function HomePage() {
   const handleNewThread = useCallback(() => {
     setActiveThreadId(undefined);
     setActiveMessages([]);
-    setDetailMessageId(undefined);
     setOrigin(null);
     setGenStatus("idle");
     setGenError(null);
@@ -333,31 +327,6 @@ export default function HomePage() {
     resetPolling();
     pendingVideoRef.current = null;
   }, [resetPolling]);
-
-  // ── Image detail panel ────────────────────────────────────────────────────────
-  const handleSelectImage = useCallback((messageId: string, index: number) => {
-    if (detailMessageId === messageId && detailImageIndex === index) {
-      setDetailMessageId(undefined);
-    } else {
-      setDetailMessageId(messageId);
-      setDetailImageIndex(index);
-    }
-  }, [detailMessageId, detailImageIndex]);
-
-  // aspectRatio now comes from the actual image, not from imageSettings default
-  const handleRemix = useCallback((imageUrl: string, aspectRatio: AspectRatio) => {
-    setMode("image");
-    setDetailMessageId(undefined);
-    setPrompt("");
-    setOrigin(imageOrigin(imageUrl, aspectRatio, "Remix source"));
-  }, []);
-
-  const handleGenerateVideoFromPanel = useCallback((imageUrl: string, aspectRatio: AspectRatio) => {
-    setMode("video");
-    setDetailMessageId(undefined);
-    setPrompt("");
-    setOrigin(imageOrigin(imageUrl, aspectRatio, "Image (from gallery)"));
-  }, []);
 
   const handleVideoVersionChange = useCallback((messageId: string, versionIndex: number) => {
     if (!activeThreadId) return;
@@ -370,21 +339,11 @@ export default function HomePage() {
     setActiveMessages([...updatedMessages]);
   }, [activeThreadId, threads, upsertThread]);
 
-  const handleModeChange = useCallback((m: Mode) => {
-    setMode(m);
-  }, []);
-
-  const handleSelectOrigin = useCallback((o: Origin) => {
-    setOrigin(o);
-  }, []);
+  const handleModeChange = useCallback((m: Mode) => setMode(m), []);
+  const handleSelectOrigin = useCallback((o: Origin) => setOrigin(o), []);
 
   // ── Derived ───────────────────────────────────────────────────────────────────
-  const detailMessage = detailMessageId
-    ? (activeMessages.find((m) => m.id === detailMessageId) as ImageResultMessageData | undefined)
-    : undefined;
-
   const isLoading = genStatus === "generating-image" || genStatus === "generating-video" || genStatus === "polling-video";
-  const showDetail = !!detailMessage && detailMessage.type === "image-result";
   const isEmpty = activeMessages.length === 0 && !isLoading;
 
   return (
@@ -393,88 +352,85 @@ export default function HomePage() {
 
       <div className="flex flex-1 overflow-hidden min-h-0">
         {sidebarOpen && (
-          <Sidebar threads={threads} activeThreadId={activeThreadId} onNewThread={handleNewThread} onSelectThread={handleSelectThread} onClearAll={clearAll} />
+          <Sidebar
+            threads={threads}
+            activeThreadId={activeThreadId}
+            onNewThread={handleNewThread}
+            onSelectThread={handleSelectThread}
+            onClearAll={clearAll}
+          />
         )}
 
-        <div className="flex flex-1 overflow-hidden min-h-0">
-          <div className="flex flex-col flex-1 overflow-hidden min-h-0">
+        {/* Main: chat fills full remaining width */}
+        <div className="flex flex-col flex-1 overflow-hidden min-h-0">
 
-            {/* Scrollable chat area */}
-            <div className="flex-1 overflow-y-auto min-h-0 relative">
-              {/* Mode toggle — floating top-right */}
-              <div className="absolute top-3 right-4 z-20">
-                <ModeToggle mode={mode} onChange={handleModeChange} />
+          {/* Scrollable chat area */}
+          <div className="flex-1 overflow-y-auto min-h-0 relative">
+            {/* Mode toggle — floating top-right */}
+            <div className="absolute top-3 right-4 z-20">
+              <ModeToggle mode={mode} onChange={handleModeChange} />
+            </div>
+
+            {isEmpty ? (
+              <div className="flex flex-col items-center justify-center min-h-full gap-8 px-6 py-12">
+                <div className="flex flex-col items-center gap-4">
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-500 to-violet-700 flex items-center justify-center shadow-xl shadow-purple-900/30">
+                    <Sparkles size={24} className="text-white" />
+                  </div>
+                  <div className="text-center">
+                    <h1 className="text-3xl font-bold text-white tracking-tight">
+                      What will you imagine?
+                    </h1>
+                    <p className="text-[#6b7280] mt-2 text-base">
+                      {mode === "image"
+                        ? "Describe an image and watch it come to life"
+                        : "Describe a video and watch it come to life"}
+                    </p>
+                  </div>
+                </div>
+                <SuggestionChips mode={mode} onSelect={(s) => setPrompt(s)} />
               </div>
-
-              {isEmpty ? (
-                <div className="flex flex-col items-center justify-center min-h-full gap-8 px-6 py-12">
-                  <div className="flex flex-col items-center gap-4">
-                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-500 to-violet-700 flex items-center justify-center shadow-xl shadow-purple-900/30">
-                      <Sparkles size={24} className="text-white" />
-                    </div>
-                    <div className="text-center">
-                      <h1 className="text-3xl font-bold text-white tracking-tight">What will you imagine?</h1>
-                      <p className="text-[#6b7280] mt-2 text-base">
-                        {mode === "image" ? "Describe an image and watch it come to life" : "Describe a video and watch it come to life"}
-                      </p>
-                    </div>
-                  </div>
-                  <SuggestionChips mode={mode} onSelect={(s) => setPrompt(s)} />
-                </div>
-              ) : (
-                <ChatThread
-                  messages={activeMessages}
-                  onSelectImage={handleSelectImage}
-                  selectedImageMessageId={detailMessageId}
-                  selectedImageIndex={detailImageIndex}
-                  onVideoVersionChange={handleVideoVersionChange}
-                  onSelectOrigin={handleSelectOrigin}
-                  activeOrigin={origin}
-                />
-              )}
-
-              {genError && (
-                <div className="max-w-[600px] mx-auto px-4 pb-2">
-                  <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
-                    <span className="flex-1">{genError}</span>
-                    <button onClick={() => setGenError(null)} className="text-red-400/60 hover:text-red-400">×</button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Prompt input */}
-            <div className="flex-shrink-0 px-4 pb-4 pt-3 border-t border-[#2a2b2e]">
-              <PromptInput
-                prompt={prompt}
-                onPromptChange={setPrompt}
-                mode={mode}
-                onModeChange={handleModeChange}
-                imageSettings={imageSettings}
-                onImageSettingsChange={setImageSettings}
-                videoSettings={videoSettings}
-                onVideoSettingsChange={setVideoSettings}
-                origin={origin}
-                onClearOrigin={() => setOrigin(null)}
-                onSubmit={handleSubmit}
-                isLoading={isLoading}
+            ) : (
+              <ChatThread
+                messages={activeMessages}
+                onVideoVersionChange={handleVideoVersionChange}
+                onSelectOrigin={handleSelectOrigin}
+                activeOrigin={origin}
               />
-            </div>
+            )}
+
+            {genError && (
+              <div className="max-w-[620px] mx-auto px-4 pb-2">
+                <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+                  <span className="flex-1">{genError}</span>
+                  <button
+                    onClick={() => setGenError(null)}
+                    className="text-red-400/60 hover:text-red-400"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Image detail panel */}
-          {showDetail && detailMessage && (
-            <div className="w-72 flex-shrink-0 border-l border-[#2a2b2e] overflow-hidden" style={{ animation: "slideInRight 0.2s ease-out" }}>
-              <ImageDetailPanel
-                images={detailMessage.images}
-                selectedIndex={detailImageIndex}
-                onSelectIndex={(i) => setDetailImageIndex(i)}
-                onClose={() => setDetailMessageId(undefined)}
-                onRemix={(url, ar) => handleRemix(url, ar)}
-                onGenerateVideo={(url, ar) => handleGenerateVideoFromPanel(url, ar)}
-              />
-            </div>
-          )}
+          {/* Prompt input */}
+          <div className="flex-shrink-0 px-4 pb-4 pt-3 border-t border-[#2a2b2e]">
+            <PromptInput
+              prompt={prompt}
+              onPromptChange={setPrompt}
+              mode={mode}
+              onModeChange={handleModeChange}
+              imageSettings={imageSettings}
+              onImageSettingsChange={setImageSettings}
+              videoSettings={videoSettings}
+              onVideoSettingsChange={setVideoSettings}
+              origin={origin}
+              onClearOrigin={() => setOrigin(null)}
+              onSubmit={handleSubmit}
+              isLoading={isLoading}
+            />
+          </div>
         </div>
       </div>
     </div>
