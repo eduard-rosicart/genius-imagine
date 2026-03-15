@@ -65,6 +65,9 @@ interface PromptInputProps {
   onClearOrigin: () => void;
   onSubmit: () => void;
   isLoading: boolean;
+  /** Whether the Raw (prompt rewriter) mode is active */
+  rawMode: boolean;
+  onRawModeChange: (value: boolean) => void;
 }
 
 export function PromptInput({
@@ -80,6 +83,8 @@ export function PromptInput({
   onClearOrigin,
   onSubmit,
   isLoading,
+  rawMode,
+  onRawModeChange,
 }: PromptInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -220,6 +225,27 @@ export function PromptInput({
                   {r}
                 </SettingChip>
               ))}
+
+          <Divider />
+
+          {/* Raw mode toggle — rewrites prompt to evade moderation filters */}
+          <button
+            type="button"
+            onClick={() => onRawModeChange(!rawMode)}
+            title={
+              rawMode
+                ? "Raw mode ON — prompt will be rewritten to bypass filters"
+                : "Raw mode OFF — prompt sent as-is"
+            }
+            className={cn(
+              "px-2 py-0.5 rounded-md text-[11px] font-semibold transition-all whitespace-nowrap border",
+              rawMode
+                ? "bg-orange-500/20 text-orange-300 border-orange-500/40 shadow-sm shadow-orange-900/20"
+                : "text-[#6b7280] hover:text-[#9ca3af] hover:bg-[#1e1f22] border-transparent"
+            )}
+          >
+            {rawMode ? "⚡ Raw" : "Raw"}
+          </button>
         </div>
       </div>
     </div>

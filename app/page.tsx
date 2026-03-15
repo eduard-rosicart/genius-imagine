@@ -15,6 +15,7 @@ import {
   GenerationStatus,
 } from "@/lib/types";
 import { generateId, truncateText } from "@/lib/utils";
+import { rewritePrompt } from "@/lib/prompt-rewriter";
 import { generateImages, startVideoGeneration, buildGeneratedVideo } from "@/hooks/useGeneration";
 import { useVideoPolling } from "@/hooks/useVideoPolling";
 import { useThreads } from "@/hooks/useThreads";
@@ -64,6 +65,9 @@ export default function HomePage() {
   const [activeMessages, setActiveMessages] = useState<ChatMessage[]>([]);
 
   // (detail panel removed — selection handled inline in ImageGallery)
+
+  // ── Raw mode (prompt rewriter) ────────────────────────────────────────────────
+  const [rawMode, setRawMode] = useState(false);
 
   // ── Unified origin state ──────────────────────────────────────────────────────
   // null = no origin (first generation in a fresh thread)
@@ -159,9 +163,11 @@ export default function HomePage() {
 
   // ── Submit ────────────────────────────────────────────────────────────────────
   const handleSubmit = useCallback(async () => {
-    const text = prompt.trim();
-    if (!text || genStatus !== "idle") return;
+    const rawText = prompt.trim();
+    if (!rawText || genStatus !== "idle") return;
     setGenError(null);
+    // Apply prompt rewriter if Raw mode is active
+    const text = rawMode ? rewritePrompt(rawText, "medium") : rawText;
 
     const isVideoMode = mode === "video";
 
@@ -288,7 +294,7 @@ export default function HomePage() {
         setActiveMessages((prev) => prev.filter((m) => m.id !== loadingId));
       }
     }
-  }, [prompt, genStatus, mode, origin, imageSettings, videoSettings, activeThreadId, threads, upsertThread, startPolling]);
+  }, [prompt, rawMode, genStatus, mode, origin, imageSettings, videoSettings, activeThreadId, threads, upsertThread, startPolling]);
 
   // ── Thread navigation ─────────────────────────────────────────────────────────
   /** Derive the best available origin from the last result in a thread */
@@ -437,6 +443,8 @@ export default function HomePage() {
               onClearOrigin={() => setOrigin(null)}
               onSubmit={handleSubmit}
               isLoading={isLoading}
+              rawMode={rawMode}
+              onRawModeChange={setRawMode}
             />
           </div>
         </div>
