@@ -340,7 +340,15 @@ export default function HomePage() {
   }, [activeThreadId, threads, upsertThread]);
 
   const handleModeChange = useCallback((m: Mode) => setMode(m), []);
-  const handleSelectOrigin = useCallback((o: Origin) => setOrigin(o), []);
+  const handleSelectOrigin = useCallback((o: Origin) => {
+    setOrigin(o);
+    // Sync aspect ratio settings with the selected origin so the next
+    // generation is immediately coherent with the source asset.
+    if (o.aspectRatio) {
+      setImageSettings((prev) => ({ ...prev, aspectRatio: o.aspectRatio }));
+      setVideoSettings((prev) => ({ ...prev, aspectRatio: o.aspectRatio }));
+    }
+  }, []);
 
   // ── Derived ───────────────────────────────────────────────────────────────────
   const isLoading = genStatus === "generating-image" || genStatus === "generating-video" || genStatus === "polling-video";
