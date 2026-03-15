@@ -12,7 +12,7 @@ export function ImageLoadingMessage({ aspectRatio }: ImageLoadingMessageProps) {
 
   return (
     <div className="w-full">
-      <div className="grid grid-cols-2 gap-1.5 max-w-[480px]">
+      <div className="grid grid-cols-2 gap-1.5 w-full">
         {[0, 1, 2, 3].map((i) => (
           <div key={i} className="rounded-xl overflow-hidden">
             <div className="relative" style={{ paddingBottom: pb }}>

@@ -19,6 +19,7 @@ import { rewritePrompt } from "@/lib/prompt-rewriter";
 import { generateImages, startVideoGeneration, buildGeneratedVideo } from "@/hooks/useGeneration";
 import { useVideoPolling } from "@/hooks/useVideoPolling";
 import { useThreads } from "@/hooks/useThreads";
+import { useIsMobile } from "@/hooks/useMediaQuery";
 
 import { Header } from "@/components/layout/Header";
 import { Sidebar } from "@/components/layout/Sidebar";
@@ -34,27 +35,27 @@ const DEFAULT_VIDEO_SETTINGS: VideoSettings = { aspectRatio: "16:9", resolution:
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
-/** Build an image-type Origin from a GeneratedImage URL + context */
 function imageOrigin(url: string, aspectRatio: AspectRatio, label: string): Origin {
   return { type: "image", thumbnailUrl: url, imageUrl: url, label, aspectRatio };
 }
 
-/** Build a video-frame Origin from a GeneratedVideo */
 function videoOrigin(videoUrl: string, aspectRatio: AspectRatio, label: string): Origin {
   return {
     type: "video-frame",
-    thumbnailUrl: videoUrl,   // used as thumbnail fallback (video poster)
+    thumbnailUrl: videoUrl,
     videoUrl,
     label,
     aspectRatio,
-    framePosition: "end",     // default to end frame
+    framePosition: "end",
   };
 }
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
 export default function HomePage() {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const isMobile = useIsMobile();
+  // On mobile, sidebar starts closed; on tablet/desktop it starts open
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [mode, setMode] = useState<Mode>("image");
   const [imageSettings, setImageSettings] = useState<ImageSettings>(DEFAULT_IMAGE_SETTINGS);
@@ -64,14 +65,10 @@ export default function HomePage() {
   const [activeThreadId, setActiveThreadId] = useState<string | undefined>(undefined);
   const [activeMessages, setActiveMessages] = useState<ChatMessage[]>([]);
 
-  // (detail panel removed — selection handled inline in ImageGallery)
-
   // ── Raw mode (prompt rewriter) ────────────────────────────────────────────────
   const [rawMode, setRawMode] = useState(false);
 
   // ── Unified origin state ──────────────────────────────────────────────────────
-  // null = no origin (first generation in a fresh thread)
-  // non-null = last selected or auto-set origin
   const [origin, setOrigin] = useState<Origin | null>(null);
 
   // ── Generation ────────────────────────────────────────────────────────────────
@@ -96,6 +93,12 @@ export default function HomePage() {
     startPolling,
     reset: resetPolling,
   } = useVideoPolling();
+
+  // ── Responsive sidebar default ────────────────────────────────────────────────
+  // Once the client hydrates, set sidebar open on non-mobile
+  useEffect(() => {
+    if (!isMobile) setSidebarOpen(true);
+  }, [isMobile]);
 
   // ── Polling resolution ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -135,7 +138,6 @@ export default function HomePage() {
         }
       }
 
-      // Auto-set origin to end frame of the new video
       setOrigin(videoOrigin(polledVideoUrl, newVideo.aspectRatio, `Video · end`));
 
       pendingVideoRef.current = null;
@@ -166,12 +168,10 @@ export default function HomePage() {
     const rawText = prompt.trim();
     if (!rawText || genStatus !== "idle") return;
     setGenError(null);
-    // Apply prompt rewriter if Raw mode is active
     const text = rawMode ? rewritePrompt(rawText, "medium") : rawText;
 
     const isVideoMode = mode === "video";
 
-    // Resolve / create thread
     let threadId = activeThreadId;
     let thread: Thread;
     if (!threadId) {
@@ -185,7 +185,6 @@ export default function HomePage() {
       };
     }
 
-    // Build prompt + loading messages
     const promptMsg: ChatMessage = { id: generateId(), type: "prompt", text, timestamp: Date.now() };
     const loadingId = generateId();
     const loadingMsg: ChatMessage = isVideoMode
@@ -198,16 +197,13 @@ export default function HomePage() {
     setActiveMessages([...newMessages]);
     setPrompt("");
 
-    // ── VIDEO path ──────────────────────────────────────────────────────────────
     if (isVideoMode) {
       setGenStatus("generating-video");
 
-      // Find last video result to append a version to
       const existingVideoMsg = thread.messages
         .slice().reverse()
         .find((m) => m.type === "video-result") as VideoResultMessageData | undefined;
 
-      // Determine what to pass to the API from the current origin
       let apiImageUrl: string | undefined;
       let apiVideoUrl: string | undefined;
       let originAspectRatio: AspectRatio | undefined;
@@ -215,22 +211,16 @@ export default function HomePage() {
       if (origin) {
         originAspectRatio = origin.aspectRatio;
         if (origin.type === "image") {
-          // Image-to-video: pass the image URL only
           apiImageUrl = origin.imageUrl;
         } else {
-          // Video-frame: xAI only accepts ONE of image OR video.
-          // If we captured a real JPEG frame (data URL), pass it as image_url.
-          // If canvas was blocked by CORS (imageUrl is undefined), fall back to video_url.
           if (origin.imageUrl) {
-            apiImageUrl = origin.imageUrl;  // captured frame → image-to-video
+            apiImageUrl = origin.imageUrl;
           } else {
-            apiVideoUrl = origin.videoUrl;  // raw video URL → video editing
+            apiVideoUrl = origin.videoUrl;
           }
-          // NEVER send both
         }
       }
 
-      // If no origin set, use the last video URL as context
       if (!origin && existingVideoMsg) {
         const lastVid = existingVideoMsg.versions[existingVideoMsg.activeVersionIndex];
         if (lastVid) {
@@ -261,10 +251,8 @@ export default function HomePage() {
         pendingVideoRef.current = null;
       }
 
-    // ── IMAGE path ──────────────────────────────────────────────────────────────
     } else {
       setGenStatus("generating-image");
-      // Use origin image URL as reference if present
       const refImageUrl = origin?.type === "image" ? origin.imageUrl : undefined;
       const effectiveAspect = origin ? origin.aspectRatio : imageSettings.aspectRatio;
 
@@ -282,7 +270,6 @@ export default function HomePage() {
         setActiveMessages([...finalMessages]);
         setGenStatus("idle");
 
-        // Auto-set origin to the first generated image
         if (imgs[0]) {
           setOrigin(imageOrigin(imgs[0].url, effectiveAspect, "Image 1"));
         }
@@ -297,9 +284,7 @@ export default function HomePage() {
   }, [prompt, rawMode, genStatus, mode, origin, imageSettings, videoSettings, activeThreadId, threads, upsertThread, startPolling]);
 
   // ── Thread navigation ─────────────────────────────────────────────────────────
-  /** Derive the best available origin from the last result in a thread */
   const deriveOriginFromThread = useCallback((messages: ChatMessage[]): Origin | null => {
-    // Walk backwards to find the last result
     for (let i = messages.length - 1; i >= 0; i--) {
       const msg = messages[i];
       if (msg.type === "video-result") {
@@ -348,8 +333,6 @@ export default function HomePage() {
   const handleModeChange = useCallback((m: Mode) => setMode(m), []);
   const handleSelectOrigin = useCallback((o: Origin) => {
     setOrigin(o);
-    // Sync aspect ratio settings with the selected origin so the next
-    // generation is immediately coherent with the source asset.
     if (o.aspectRatio) {
       setImageSettings((prev) => ({ ...prev, aspectRatio: o.aspectRatio }));
       setVideoSettings((prev) => ({ ...prev, aspectRatio: o.aspectRatio }));
@@ -361,41 +344,48 @@ export default function HomePage() {
   const isEmpty = activeMessages.length === 0 && !isLoading;
 
   return (
-    <div className="flex flex-col h-screen bg-[#1e1f22] overflow-hidden">
-      <Header onToggleSidebar={() => setSidebarOpen((p) => !p)} onNewThread={handleNewThread} />
+    <div
+      className="flex flex-col bg-[#1e1f22] overflow-hidden"
+      style={{ height: "100dvh" }}
+    >
+      <Header
+        onToggleSidebar={() => setSidebarOpen((p) => !p)}
+        onNewThread={handleNewThread}
+        sidebarOpen={sidebarOpen}
+      />
 
       <div className="flex flex-1 overflow-hidden min-h-0">
-        {sidebarOpen && (
-          <Sidebar
-            threads={threads}
-            activeThreadId={activeThreadId}
-            onNewThread={handleNewThread}
-            onSelectThread={handleSelectThread}
-            onClearAll={clearAll}
-          />
-        )}
+        <Sidebar
+          threads={threads}
+          activeThreadId={activeThreadId}
+          isOpen={sidebarOpen}
+          onNewThread={handleNewThread}
+          onSelectThread={handleSelectThread}
+          onClearAll={clearAll}
+          onClose={() => setSidebarOpen(false)}
+        />
 
         {/* Main: chat fills full remaining width */}
         <div className="flex flex-col flex-1 overflow-hidden min-h-0">
 
           {/* Scrollable chat area */}
-          <div className="flex-1 overflow-y-auto min-h-0 relative">
+          <div className="flex-1 overflow-y-auto min-h-0 relative scroll-contain">
             {/* Mode toggle — floating top-right */}
-            <div className="absolute top-3 right-4 z-20">
+            <div className="absolute top-3 right-3 z-20">
               <ModeToggle mode={mode} onChange={handleModeChange} />
             </div>
 
             {isEmpty ? (
-              <div className="flex flex-col items-center justify-center min-h-full gap-8 px-6 py-12">
-                <div className="flex flex-col items-center gap-4">
-                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-500 to-violet-700 flex items-center justify-center shadow-xl shadow-purple-900/30">
-                    <Sparkles size={24} className="text-white" />
+              <div className="flex flex-col items-center justify-center min-h-full gap-6 px-4 py-10 md:gap-8 md:py-12">
+                <div className="flex flex-col items-center gap-3 md:gap-4">
+                  <div className="w-12 h-12 md:w-14 md:h-14 rounded-2xl bg-gradient-to-br from-purple-500 to-violet-700 flex items-center justify-center shadow-xl shadow-purple-900/30">
+                    <Sparkles size={22} className="text-white md:text-[24px]" />
                   </div>
                   <div className="text-center">
-                    <h1 className="text-3xl font-bold text-white tracking-tight">
+                    <h1 className="text-2xl md:text-3xl font-bold text-white tracking-tight">
                       What will you imagine?
                     </h1>
-                    <p className="text-[#6b7280] mt-2 text-base">
+                    <p className="text-[#6b7280] mt-2 text-sm md:text-base">
                       {mode === "image"
                         ? "Describe an image and watch it come to life"
                         : "Describe a video and watch it come to life"}
@@ -414,12 +404,12 @@ export default function HomePage() {
             )}
 
             {genError && (
-              <div className="max-w-[620px] mx-auto px-4 pb-2">
+              <div className="max-w-full md:max-w-[620px] mx-auto px-3 md:px-4 pb-2">
                 <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
                   <span className="flex-1">{genError}</span>
                   <button
                     onClick={() => setGenError(null)}
-                    className="text-red-400/60 hover:text-red-400"
+                    className="w-8 h-8 flex items-center justify-center text-red-400/60 hover:text-red-400 transition-colors"
                   >
                     ×
                   </button>
@@ -429,7 +419,10 @@ export default function HomePage() {
           </div>
 
           {/* Prompt input */}
-          <div className="flex-shrink-0 px-4 pb-4 pt-3 border-t border-[#2a2b2e]">
+          <div
+            className="flex-shrink-0 px-3 md:px-4 pt-2 md:pt-3 border-t border-[#2a2b2e]"
+            style={{ paddingBottom: "max(12px, calc(var(--safe-bottom) + 8px))" }}
+          >
             <PromptInput
               prompt={prompt}
               onPromptChange={setPrompt}

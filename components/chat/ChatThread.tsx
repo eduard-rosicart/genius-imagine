@@ -31,22 +31,26 @@ export function ChatThread({
     activeOrigin?.type === "image" ? activeOrigin.imageUrl : undefined;
 
   return (
-    <div className="flex flex-col gap-6 px-4 py-6 max-w-[620px] w-full mx-auto">
-      {messages.map((msg) => {
+    <div className="flex flex-col gap-5 md:gap-6 px-3 md:px-4 py-5 md:py-6 w-full max-w-full md:max-w-[620px] lg:max-w-[680px] mx-auto">
+      {messages.map((msg, idx) => {
         switch (msg.type) {
           case "prompt":
-            return <PromptMessage key={msg.id} text={msg.text} />;
+            return (
+              <div key={msg.id} className="chat-message-enter" style={{ animationDelay: `${Math.min(idx * 30, 120)}ms` }}>
+                <PromptMessage text={msg.text} />
+              </div>
+            );
 
           case "image-loading":
             return (
-              <div key={msg.id}>
+              <div key={msg.id} className="chat-message-enter">
                 <ImageLoadingMessage aspectRatio={msg.aspectRatio} />
               </div>
             );
 
           case "image-result":
             return (
-              <div key={msg.id}>
+              <div key={msg.id} className="chat-message-enter">
                 <ImageGallery
                   images={msg.images}
                   onSelectOrigin={onSelectOrigin}
@@ -58,7 +62,7 @@ export function ChatThread({
 
           case "video-loading":
             return (
-              <div key={msg.id}>
+              <div key={msg.id} className="chat-message-enter">
                 <VideoLoadingMessage />
               </div>
             );
@@ -69,7 +73,7 @@ export function ChatThread({
               msg.versions.some((v) => v.url === activeOrigin.videoUrl);
 
             return (
-              <div key={msg.id}>
+              <div key={msg.id} className="chat-message-enter">
                 <VideoResultMessage
                   message={msg}
                   onVersionChange={onVideoVersionChange}

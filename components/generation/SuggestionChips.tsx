@@ -31,16 +31,34 @@ export function SuggestionChips({ mode, onSelect }: SuggestionChipsProps) {
   const suggestions = mode === "image" ? IMAGE_SUGGESTIONS : VIDEO_SUGGESTIONS;
 
   return (
-    <div className="flex flex-wrap gap-2 justify-center max-w-2xl">
-      {suggestions.map((s) => (
-        <button
-          key={s}
-          onClick={() => onSelect(s)}
-          className="px-3 py-1.5 rounded-full text-xs text-[#9ca3af] hover:text-white bg-[#2a2b2e] hover:bg-[#333438] border border-[#3a3b3e] transition-all"
-        >
-          {s}
-        </button>
-      ))}
-    </div>
+    <>
+      {/* Mobile: horizontal scroll row */}
+      <div className="md:hidden w-full overflow-x-auto scroll-contain -mx-4 px-4">
+        <div className="flex gap-2 pb-1" style={{ width: "max-content" }}>
+          {suggestions.map((s) => (
+            <button
+              key={s}
+              onClick={() => onSelect(s)}
+              className="flex-shrink-0 px-3 py-2 rounded-full text-xs text-[#9ca3af] hover:text-white active:text-white bg-[#2a2b2e] hover:bg-[#333438] active:bg-[#3a3b3e] border border-[#3a3b3e] transition-all whitespace-nowrap"
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Tablet/Desktop: wrapped grid */}
+      <div className="hidden md:flex flex-wrap gap-2 justify-center max-w-2xl">
+        {suggestions.map((s) => (
+          <button
+            key={s}
+            onClick={() => onSelect(s)}
+            className="px-3 py-1.5 rounded-full text-xs text-[#9ca3af] hover:text-white bg-[#2a2b2e] hover:bg-[#333438] border border-[#3a3b3e] transition-all"
+          >
+            {s}
+          </button>
+        ))}
+      </div>
+    </>
   );
 }

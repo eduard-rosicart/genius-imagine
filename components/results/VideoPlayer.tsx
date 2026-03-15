@@ -1,26 +1,18 @@
 "use client";
 
-import { useRef, useState, useCallback, useEffect } from "react";
+import { useRef, useState, useCallback } from "react";
 import { Play, Pause, Volume2, VolumeX, Download, Maximize } from "lucide-react";
 import { AspectRatio } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 interface VideoPlayerProps {
   url: string;
-  /** Hint used as initial CSS aspect-ratio. The video's real dimensions take over on load. */
   aspectRatio: AspectRatio;
 }
 
 /** Convert "16:9" → "16/9" for CSS aspect-ratio property */
 function cssRatio(ratio: AspectRatio) {
   return ratio.replace(":", "/");
-}
-
-function maxWidth(ratio: AspectRatio) {
-  const [w, h] = ratio.split(":").map(Number);
-  if (h > w) return "300px";   // portrait
-  if (h === w) return "400px"; // square
-  return "520px";              // landscape
 }
 
 export function VideoPlayer({ url, aspectRatio }: VideoPlayerProps) {
@@ -30,11 +22,9 @@ export function VideoPlayer({ url, aspectRatio }: VideoPlayerProps) {
   const [muted, setMuted] = useState(true);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState(false);
-  // Once the video loads its real dimensions we drop the hint ratio
   const [metaLoaded, setMetaLoaded] = useState(false);
 
   const hintRatio = cssRatio(aspectRatio);
-  const mw = maxWidth(aspectRatio);
 
   // ── play / pause ─────────────────────────────────────────────────────────────
   const handleTogglePlay = useCallback(async () => {
@@ -73,12 +63,21 @@ export function VideoPlayer({ url, aspectRatio }: VideoPlayerProps) {
     setProgress(0);
   }, []);
 
-  // ── seek ─────────────────────────────────────────────────────────────────────
+  // ── seek (mouse) ──────────────────────────────────────────────────────────────
   const handleSeek = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const v = videoRef.current;
     if (!v || !v.duration) return;
     const rect = e.currentTarget.getBoundingClientRect();
     v.currentTime = ((e.clientX - rect.left) / rect.width) * v.duration;
+  }, []);
+
+  // ── seek (touch) ──────────────────────────────────────────────────────────────
+  const handleSeekTouch = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
+    const v = videoRef.current;
+    if (!v || !v.duration) return;
+    const touch = e.touches[0];
+    const rect = e.currentTarget.getBoundingClientRect();
+    v.currentTime = ((touch.clientX - rect.left) / rect.width) * v.duration;
   }, []);
 
   // ── fullscreen ────────────────────────────────────────────────────────────────
@@ -89,7 +88,6 @@ export function VideoPlayer({ url, aspectRatio }: VideoPlayerProps) {
       if (v.requestFullscreen) {
         await v.requestFullscreen();
       } else {
-        // Safari iOS
         const webkit = v as unknown as { webkitEnterFullscreen?: () => void };
         webkit.webkitEnterFullscreen?.();
       }
@@ -110,16 +108,13 @@ export function VideoPlayer({ url, aspectRatio }: VideoPlayerProps) {
   // ── error fallback ────────────────────────────────────────────────────────────
   if (error) {
     return (
-      <div
-        className="rounded-2xl bg-[#2a2b2e] border border-[#3a3b3e] flex flex-col items-center justify-center gap-3 py-8 px-6"
-        style={{ maxWidth: mw }}
-      >
+      <div className="rounded-2xl bg-[#2a2b2e] border border-[#3a3b3e] flex flex-col items-center justify-center gap-3 py-8 px-6 w-full">
         <p className="text-sm text-[#6b7280] text-center">
           Unable to play — try downloading directly
         </p>
         <button
           onClick={handleDownload}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#333438] hover:bg-[#3a3b3e] text-white text-sm transition-colors"
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#333438] hover:bg-[#3a3b3e] active:bg-[#444548] text-white text-sm transition-colors"
         >
           <Download size={14} />
           Download video
@@ -130,18 +125,14 @@ export function VideoPlayer({ url, aspectRatio }: VideoPlayerProps) {
 
   return (
     /*
-     * Key insight: instead of a fixed paddingBottom container that forces a
-     * predetermined height, we let the <video> element be a normal block with
-     * width:100%. The browser respects the video's intrinsic dimensions and
-     * sizes the element correctly as soon as metadata loads.
-     *
-     * We supply a CSS `aspect-ratio` hint (from the prop) so the space is
-     * reserved before metadata arrives, preventing layout shift. Once
-     * loadedmetadata fires we clear the hint so the real ratio takes over.
+     * Full width on mobile, capped on tablet/desktop.
+     * CSS aspect-ratio hint prevents layout shift before metadata loads.
      */
     <div
-      className="relative rounded-2xl overflow-hidden bg-black"
-      style={{ width: "100%", maxWidth: mw }}
+      className="relative rounded-2xl overflow-hidden bg-black w-full"
+      style={{
+        maxWidth: "min(100%, 520px)",
+      }}
     >
       <video
         ref={videoRef}
@@ -155,12 +146,6 @@ export function VideoPlayer({ url, aspectRatio }: VideoPlayerProps) {
         onEnded={handleEnded}
         onError={() => setError(true)}
         className="block w-full"
-        /*
-         * Before metadata: use the settings-derived hint ratio so layout
-         * doesn't collapse to 0 height.
-         * After metadata: remove it — the browser uses the real video
-         * dimensions (videoWidth / videoHeight) automatically.
-         */
         style={metaLoaded ? {} : { aspectRatio: hintRatio }}
       />
 
@@ -172,8 +157,8 @@ export function VideoPlayer({ url, aspectRatio }: VideoPlayerProps) {
           className="absolute inset-0 w-full h-full flex items-center justify-center"
           aria-label="Play"
         >
-          <div className="w-16 h-16 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center hover:bg-black/80 transition-colors pointer-events-none">
-            <Play size={26} fill="white" className="text-white ml-1" />
+          <div className="w-14 h-14 md:w-16 md:h-16 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center hover:bg-black/80 active:bg-black/90 transition-colors pointer-events-none">
+            <Play size={24} fill="white" className="text-white ml-1" />
           </div>
         </button>
       )}
@@ -185,10 +170,12 @@ export function VideoPlayer({ url, aspectRatio }: VideoPlayerProps) {
           playing ? "opacity-0 hover:opacity-100" : "opacity-100"
         )}
       >
-        {/* Progress */}
+        {/* Progress — taller touch target on mobile */}
         <div
           className="mx-3 mb-2 h-1.5 bg-white/20 rounded-full cursor-pointer"
           onClick={handleSeek}
+          onTouchMove={handleSeekTouch}
+          style={{ touchAction: "none" }}
         >
           <div
             className="h-full bg-white rounded-full pointer-events-none"
@@ -196,42 +183,42 @@ export function VideoPlayer({ url, aspectRatio }: VideoPlayerProps) {
           />
         </div>
 
-        {/* Buttons */}
+        {/* Buttons — 40px touch targets on mobile */}
         <div className="flex items-center justify-between px-3 pb-3 bg-gradient-to-t from-black/70 to-transparent">
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={handleTogglePlay}
-              className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white"
+              className="w-10 h-10 md:w-8 md:h-8 rounded-lg bg-white/10 hover:bg-white/20 active:bg-white/30 flex items-center justify-center text-white"
             >
               {playing
-                ? <Pause size={14} fill="white" />
-                : <Play size={14} fill="white" className="ml-0.5" />}
+                ? <Pause size={15} fill="white" />
+                : <Play size={15} fill="white" className="ml-0.5" />}
             </button>
             <button
               type="button"
               onClick={handleToggleMute}
-              className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white"
+              className="w-10 h-10 md:w-8 md:h-8 rounded-lg bg-white/10 hover:bg-white/20 active:bg-white/30 flex items-center justify-center text-white"
             >
-              {muted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+              {muted ? <VolumeX size={15} /> : <Volume2 size={15} />}
             </button>
           </div>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={handleFullscreen}
-              className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white"
+              className="w-10 h-10 md:w-8 md:h-8 rounded-lg bg-white/10 hover:bg-white/20 active:bg-white/30 flex items-center justify-center text-white"
               aria-label="Fullscreen"
             >
-              <Maximize size={14} />
+              <Maximize size={15} />
             </button>
             <button
               type="button"
               onClick={handleDownload}
-              className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white"
+              className="w-10 h-10 md:w-8 md:h-8 rounded-lg bg-white/10 hover:bg-white/20 active:bg-white/30 flex items-center justify-center text-white"
               aria-label="Download"
             >
-              <Download size={14} />
+              <Download size={15} />
             </button>
           </div>
         </div>

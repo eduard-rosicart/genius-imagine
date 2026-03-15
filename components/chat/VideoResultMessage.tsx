@@ -11,7 +11,6 @@ interface VideoResultMessageProps {
   message: VideoResultMessageData;
   onVersionChange: (messageId: string, versionIndex: number) => void;
   onSelectOrigin: (origin: Origin) => void;
-  /** If this video is the current origin, highlight it */
   isOrigin?: boolean;
   originFramePos?: FramePosition;
 }
@@ -42,7 +41,6 @@ export function VideoResultMessage({
       const versionLabel = `Video v${message.activeVersionIndex + 1}`;
       setCapturingPos(pos);
 
-      // Fix: query the <video> element *inside* the data-video-id container
       const container = document.querySelector(`[data-video-id="${activeVideo.id}"]`);
       const videoEl = container?.querySelector<HTMLVideoElement>("video") ?? null;
 
@@ -55,14 +53,12 @@ export function VideoResultMessage({
           thumbnailUrl = frame;
           imageUrl = frame;
         } catch {
-          // CORS blocked — no frame capture, will fall back to video_url in submit
+          // CORS blocked
         }
       }
 
       const origin: Origin = {
         type: "video-frame",
-        // thumbnailUrl: use captured frame if available; otherwise leave undefined
-        // so OriginIndicator renders the fallback video icon
         thumbnailUrl: thumbnailUrl ?? "",
         imageUrl,
         videoUrl: activeVideo.url,
@@ -79,8 +75,8 @@ export function VideoResultMessage({
   );
 
   return (
-    <div className="w-full space-y-2">
-      {/* Video player wrapper — data-video-id here so querySelector finds the <video> inside */}
+    <div className="w-full space-y-2.5">
+      {/* Video player */}
       <div
         data-video-id={activeVideo.id}
         className={cn(
@@ -100,21 +96,21 @@ export function VideoResultMessage({
       </div>
 
       {/* ── Frame selector ── */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
         <span className="text-[11px] text-[#4b5563] font-medium">Use as origin:</span>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1.5">
           {FRAME_POSITIONS.map(({ pos, label }) => (
             <button
               key={pos}
               onClick={() => handleSelectFrame(pos)}
               disabled={capturingPos !== null}
               className={cn(
-                "px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all",
+                "px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all min-h-[34px]",
                 isOrigin && activeFramePos === pos
                   ? "bg-cyan-500/25 text-cyan-300 border border-cyan-500/40"
                   : activeFramePos === pos
                   ? "bg-purple-600/25 text-purple-300 border border-purple-500/40"
-                  : "text-[#6b7280] hover:text-[#9ca3af] bg-[#2a2b2e] border border-[#3a3b3e] hover:border-[#4a4b4e]",
+                  : "text-[#6b7280] hover:text-[#9ca3af] active:text-[#9ca3af] bg-[#2a2b2e] border border-[#3a3b3e] hover:border-[#4a4b4e]",
                 capturingPos !== null && "opacity-50 cursor-not-allowed"
               )}
             >
@@ -132,10 +128,10 @@ export function VideoResultMessage({
               key={v.id}
               onClick={() => onVersionChange(message.id, i)}
               className={cn(
-                "px-2.5 py-1 rounded-lg text-xs font-medium transition-all",
+                "px-3 py-1.5 rounded-lg text-xs font-medium transition-all min-h-[34px]",
                 i === message.activeVersionIndex
                   ? "bg-purple-600/25 text-purple-300 border border-purple-500/40"
-                  : "text-[#6b7280] hover:text-[#9ca3af] bg-[#2a2b2e] border border-[#3a3b3e] hover:border-[#4a4b4e]"
+                  : "text-[#6b7280] hover:text-[#9ca3af] active:text-[#9ca3af] bg-[#2a2b2e] border border-[#3a3b3e] hover:border-[#4a4b4e]"
               )}
             >
               v{i + 1}
