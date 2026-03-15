@@ -84,7 +84,7 @@ export default function HomePage() {
     originAspectRatio?: AspectRatio;
   } | null>(null);
 
-  const { threads, upsertThread, clearAll, replaceMessage } = useThreads();
+  const { threads, upsertThread, removeThread, clearAll, replaceMessage } = useThreads();
   const {
     status: pollStatus,
     videoUrl: polledVideoUrl,
@@ -319,6 +319,21 @@ export default function HomePage() {
     pendingVideoRef.current = null;
   }, [resetPolling]);
 
+  const handleDeleteThread = useCallback((id: string) => {
+    removeThread(id);
+    // If the deleted thread was active, go back to empty state
+    if (id === activeThreadId) {
+      setActiveThreadId(undefined);
+      setActiveMessages([]);
+      setOrigin(null);
+      setGenStatus("idle");
+      setGenError(null);
+      setPrompt("");
+      resetPolling();
+      pendingVideoRef.current = null;
+    }
+  }, [removeThread, activeThreadId, resetPolling]);
+
   const handleVideoVersionChange = useCallback((messageId: string, versionIndex: number) => {
     if (!activeThreadId) return;
     const currentThread = threads.find((t) => t.id === activeThreadId);
@@ -361,6 +376,7 @@ export default function HomePage() {
           isOpen={sidebarOpen}
           onNewThread={handleNewThread}
           onSelectThread={handleSelectThread}
+          onDeleteThread={handleDeleteThread}
           onClearAll={clearAll}
           onClose={() => setSidebarOpen(false)}
         />

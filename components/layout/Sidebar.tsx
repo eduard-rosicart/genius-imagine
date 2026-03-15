@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { Plus, Trash2, Image as ImageIcon, Film, Clock, X } from "lucide-react";
+import { Plus, Trash2, Image as ImageIcon, Film, Clock, X, Trash } from "lucide-react";
 import { Thread } from "@/lib/types";
 import { truncateText, formatTimestamp } from "@/lib/utils";
 import { cn } from "@/lib/utils";
@@ -13,6 +13,7 @@ interface SidebarProps {
   isOpen: boolean;
   onNewThread: () => void;
   onSelectThread: (thread: Thread) => void;
+  onDeleteThread: (id: string) => void;
   onClearAll: () => void;
   onClose: () => void;
 }
@@ -23,6 +24,7 @@ export function Sidebar({
   isOpen,
   onNewThread,
   onSelectThread,
+  onDeleteThread,
   onClearAll,
   onClose,
 }: SidebarProps) {
@@ -74,6 +76,7 @@ export function Sidebar({
             activeThreadId={activeThreadId}
             onNewThread={() => { onNewThread(); onClose(); }}
             onSelectThread={(t) => { onSelectThread(t); onClose(); }}
+            onDeleteThread={onDeleteThread}
             onClearAll={onClearAll}
             showCloseButton
             onClose={onClose}
@@ -99,6 +102,7 @@ export function Sidebar({
         activeThreadId={activeThreadId}
         onNewThread={onNewThread}
         onSelectThread={onSelectThread}
+        onDeleteThread={onDeleteThread}
         onClearAll={onClearAll}
       />
     </aside>
@@ -112,6 +116,7 @@ interface SidebarContentProps {
   activeThreadId?: string;
   onNewThread: () => void;
   onSelectThread: (thread: Thread) => void;
+  onDeleteThread: (id: string) => void;
   onClearAll: () => void;
   showCloseButton?: boolean;
   onClose?: () => void;
@@ -122,6 +127,7 @@ function SidebarContent({
   activeThreadId,
   onNewThread,
   onSelectThread,
+  onDeleteThread,
   onClearAll,
   showCloseButton,
   onClose,
@@ -170,6 +176,7 @@ function SidebarContent({
                 thread={thread}
                 isActive={thread.id === activeThreadId}
                 onClick={() => onSelectThread(thread)}
+                onDelete={() => onDeleteThread(thread.id)}
               />
             ))}
           </div>
@@ -199,24 +206,31 @@ function ThreadRow({
   thread,
   isActive,
   onClick,
+  onDelete,
 }: {
   thread: Thread;
   isActive: boolean;
   onClick: () => void;
+  onDelete: () => void;
 }) {
   const lastMsg = thread.messages[thread.messages.length - 1];
   const hasVideo =
     lastMsg?.type === "video-result" || lastMsg?.type === "video-loading";
 
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onDelete();
+  };
+
   return (
-    <button
-      onClick={onClick}
+    <div
       className={cn(
-        "w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-xl text-left transition-colors group",
+        "group relative flex items-center gap-2.5 px-2.5 py-2.5 rounded-xl transition-colors cursor-pointer",
         isActive
           ? "bg-[#2a2b2e] text-white"
           : "text-[#9ca3af] hover:bg-[#222326] active:bg-[#2a2b2e] hover:text-[#e8e8e8]"
       )}
+      onClick={onClick}
     >
       {/* Thumbnail */}
       <div className="w-9 h-9 rounded-lg flex-shrink-0 overflow-hidden bg-[#2a2b2e] flex items-center justify-center border border-[#3a3b3e]">
@@ -243,6 +257,22 @@ function ThreadRow({
           {formatTimestamp(thread.updatedAt)}
         </p>
       </div>
-    </button>
+
+      {/* Delete button — hover on desktop, always visible on mobile */}
+      <button
+        onClick={handleDelete}
+        aria-label="Delete thread"
+        className={cn(
+          "flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center transition-colors",
+          "text-[#3a3b3e] hover:text-red-400 hover:bg-red-500/10 active:bg-red-500/15",
+          // Desktop: only appear on group hover. Mobile: always show (dimmed).
+          "opacity-0 group-hover:opacity-100 md:opacity-0 md:group-hover:opacity-100",
+          // On mobile (touch), always show at low opacity so it's discoverable
+          "max-md:opacity-40 max-md:group-hover:opacity-100"
+        )}
+      >
+        <Trash size={13} />
+      </button>
+    </div>
   );
 }
