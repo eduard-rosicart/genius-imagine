@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, KeyboardEvent, useEffect, useState } from "react";
-import { ArrowUp, Loader2, Image as ImageIcon, Film, SlidersHorizontal, X } from "lucide-react";
+import { ArrowUp, Loader2, Image as ImageIcon, Film, SlidersHorizontal, X, Zap } from "lucide-react";
 import {
   Mode,
   Origin,
@@ -10,26 +10,37 @@ import {
   AspectRatio,
   ImageResolution,
   VideoResolution,
+  Provider,
 } from "@/lib/types";
+import { PROVIDERS } from "@/lib/providers";
 import { cn } from "@/lib/utils";
 import { OriginIndicator } from "./OriginIndicator";
 import { useIsMobile } from "@/hooks/useMediaQuery";
 
-// ─── Inline settings options ───────────────────────────────────────────────────
+// ─── Settings options ──────────────────────────────────────────────────────────
 
 const IMAGE_RATIOS: AspectRatio[] = ["1:1", "16:9", "9:16", "4:3", "3:4", "2:3"];
 const VIDEO_RATIOS: AspectRatio[] = ["16:9", "9:16", "1:1", "4:3"];
 const VIDEO_DURATIONS = [3, 5, 8, 10, 15];
 
+// ─── Small chips for desktop settings bar ────────────────────────────────────
+
 function SettingChip({
   active,
   onClick,
   children,
+  accent,
 }: {
   active: boolean;
   onClick: () => void;
   children: React.ReactNode;
+  accent?: "purple" | "teal";
 }) {
+  const accentActive =
+    accent === "teal"
+      ? "bg-teal-600/20 text-teal-300 border border-teal-500/40"
+      : "bg-purple-600/25 text-purple-300 border border-purple-500/40";
+
   return (
     <button
       type="button"
@@ -37,7 +48,7 @@ function SettingChip({
       className={cn(
         "px-2.5 py-1 rounded-md text-[11px] font-medium transition-all whitespace-nowrap",
         active
-          ? "bg-purple-600/25 text-purple-300 border border-purple-500/40"
+          ? accentActive
           : "text-[#6b7280] hover:text-[#9ca3af] active:text-[#9ca3af] hover:bg-[#1e1f22] active:bg-[#1e1f22] border border-transparent"
       )}
     >
@@ -57,6 +68,8 @@ interface PromptInputProps {
   onPromptChange: (value: string) => void;
   mode: Mode;
   onModeChange: (mode: Mode) => void;
+  provider: Provider;
+  onProviderChange: (p: Provider) => void;
   imageSettings: ImageSettings;
   onImageSettingsChange: (s: ImageSettings) => void;
   videoSettings: VideoSettings;
@@ -74,6 +87,8 @@ interface PromptInputProps {
 interface MobileSettingsSheetProps {
   open: boolean;
   onClose: () => void;
+  provider: Provider;
+  onProviderChange: (p: Provider) => void;
   mode: Mode;
   onModeChange: (mode: Mode) => void;
   imageSettings: ImageSettings;
@@ -87,6 +102,8 @@ interface MobileSettingsSheetProps {
 function MobileSettingsSheet({
   open,
   onClose,
+  provider,
+  onProviderChange,
   mode,
   onModeChange,
   imageSettings,
@@ -132,18 +149,53 @@ function MobileSettingsSheet({
         </div>
 
         <div className="px-4 pb-2 space-y-4">
+          {/* Provider */}
+          <SettingSection label="Provider">
+            <div className="flex gap-2">
+              <FullChip
+                active={provider === "xai"}
+                onClick={() => onProviderChange("xai")}
+                accent="purple"
+              >
+                <span className="flex items-center gap-1.5">
+                  <Zap size={13} />
+                  xAI
+                </span>
+              </FullChip>
+              <FullChip
+                active={provider === "eternalai"}
+                onClick={() => onProviderChange("eternalai")}
+                accent="teal"
+              >
+                <span className="flex items-center gap-1.5">
+                  <span className="text-[13px]">∞</span>
+                  EternalAI
+                </span>
+              </FullChip>
+            </div>
+            <p className="text-[10px] text-[#4b5563] mt-1">
+              {PROVIDERS[provider].description}
+            </p>
+          </SettingSection>
+
           {/* Mode */}
           <SettingSection label="Mode">
             <div className="flex gap-2">
               <FullChip active={mode === "image"} onClick={() => { onModeChange("image"); onClose(); }}>
-                <ImageIcon size={12} />
-                Image
+                <span className="flex items-center gap-1.5"><ImageIcon size={12} />Image</span>
               </FullChip>
-              <FullChip active={mode === "video"} onClick={() => { onModeChange("video"); onClose(); }}>
-                <Film size={12} />
-                Video
+              <FullChip
+                active={mode === "video"}
+                onClick={() => { onModeChange("video"); onClose(); }}
+              >
+                <span className="flex items-center gap-1.5"><Film size={12} />Video</span>
               </FullChip>
             </div>
+            {mode === "video" && provider === "eternalai" && (
+              <p className="text-[10px] text-amber-500/80 mt-1">
+                EternalAI video requires a reference image as Origin.
+              </p>
+            )}
           </SettingSection>
 
           {/* Aspect ratio */}
@@ -167,9 +219,9 @@ function MobileSettingsSheet({
 
           {/* Duration (video only) */}
           {mode === "video" && (
-            <SettingSection label="Duration">
+            <SettingSection label={`Duration${provider === "eternalai" ? " (max 5s)" : ""}`}>
               <div className="flex flex-wrap gap-2">
-                {VIDEO_DURATIONS.map((d) => (
+                {(provider === "eternalai" ? VIDEO_DURATIONS.filter((d) => d <= 5) : VIDEO_DURATIONS).map((d) => (
                   <FullChip
                     key={d}
                     active={videoSettings.duration === d}
@@ -207,7 +259,7 @@ function MobileSettingsSheet({
             </div>
           </SettingSection>
 
-          {/* Raw mode */}
+          {/* Raw mode (xAI only hint) */}
           <SettingSection label="Raw Mode">
             <button
               type="button"
@@ -238,7 +290,22 @@ function SettingSection({ label, children }: { label: string; children: React.Re
   );
 }
 
-function FullChip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+function FullChip({
+  active,
+  onClick,
+  children,
+  accent,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+  accent?: "purple" | "teal";
+}) {
+  const accentActive =
+    accent === "teal"
+      ? "bg-teal-600/20 text-teal-300 border-teal-500/40"
+      : "bg-purple-600/25 text-purple-300 border-purple-500/40";
+
   return (
     <button
       type="button"
@@ -246,7 +313,7 @@ function FullChip({ active, onClick, children }: { active: boolean; onClick: () 
       className={cn(
         "flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium transition-all border",
         active
-          ? "bg-purple-600/25 text-purple-300 border-purple-500/40"
+          ? accentActive
           : "text-[#9ca3af] border-[#3a3b3e] hover:text-white hover:bg-[#2a2b2e] active:bg-[#2a2b2e]"
       )}
     >
@@ -262,6 +329,8 @@ export function PromptInput({
   onPromptChange,
   mode,
   onModeChange,
+  provider,
+  onProviderChange,
   imageSettings,
   onImageSettingsChange,
   videoSettings,
@@ -301,10 +370,13 @@ export function PromptInput({
       ? "Describe the image you want to create…"
       : "Describe the video you want to generate…";
 
-  // Summary of active settings for mobile display
+  // Summary for mobile compact bar
   const activeSettingsSummary = mode === "image"
     ? `${imageSettings.aspectRatio} · ${imageSettings.resolution.toUpperCase()}`
     : `${videoSettings.aspectRatio} · ${videoSettings.duration}s · ${videoSettings.resolution}`;
+
+  const providerLabel = provider === "xai" ? "xAI" : "EternalAI";
+  const isEternalAi = provider === "eternalai";
 
   return (
     <>
@@ -314,6 +386,15 @@ export function PromptInput({
           {/* ── Origin indicator ── */}
           {origin && (
             <OriginIndicator origin={origin} onClear={onClearOrigin} />
+          )}
+
+          {/* ── EternalAI video hint (when no image origin) ── */}
+          {mode === "video" && isEternalAi && origin?.type !== "image" && (
+            <div className="mx-3 mt-2.5 px-3 py-2 rounded-xl bg-amber-500/8 border border-amber-500/20 flex items-center gap-2">
+              <span className="text-amber-400/70 text-[11px] flex-1">
+                EternalAI video requires an image as Origin. Generate an image first.
+              </span>
+            </div>
           )}
 
           {/* ── Textarea + send ── */}
@@ -341,18 +422,29 @@ export function PromptInput({
                   : "bg-[#1e1f22] text-[#4b5563] cursor-not-allowed"
               )}
             >
-              {isLoading ? (
-                <Loader2 size={16} className="animate-spin" />
-              ) : (
-                <ArrowUp size={16} />
-              )}
+              {isLoading ? <Loader2 size={16} className="animate-spin" /> : <ArrowUp size={16} />}
             </button>
           </div>
 
           {/* ── Settings bar ── */}
           {isMobile ? (
-            /* Mobile: compact one-row bar with settings button */
+            /* Mobile: compact one-row bar */
             <div className="px-3 pb-3 flex items-center gap-2 border-t border-[#1e1f22] pt-2.5">
+              {/* Provider pill */}
+              <button
+                type="button"
+                onClick={() => setSettingsOpen(true)}
+                className={cn(
+                  "flex-shrink-0 flex items-center gap-1 px-2 py-1.5 rounded-lg text-[11px] font-semibold transition-all border",
+                  isEternalAi
+                    ? "bg-teal-600/15 text-teal-400 border-teal-500/30"
+                    : "bg-purple-600/15 text-purple-400 border-purple-500/30"
+                )}
+              >
+                {isEternalAi ? <span className="text-[12px]">∞</span> : <Zap size={11} />}
+                {providerLabel}
+              </button>
+
               {/* Mode toggle — left side */}
               <div className="flex items-center gap-1">
                 <button
@@ -360,9 +452,7 @@ export function PromptInput({
                   onClick={() => onModeChange("image")}
                   className={cn(
                     "flex items-center gap-1 px-2 py-1.5 rounded-lg text-[11px] font-medium transition-all",
-                    mode === "image"
-                      ? "bg-purple-600/25 text-purple-300"
-                      : "text-[#6b7280]"
+                    mode === "image" ? "bg-purple-600/25 text-purple-300" : "text-[#6b7280]"
                   )}
                 >
                   <ImageIcon size={11} />
@@ -373,9 +463,7 @@ export function PromptInput({
                   onClick={() => onModeChange("video")}
                   className={cn(
                     "flex items-center gap-1 px-2 py-1.5 rounded-lg text-[11px] font-medium transition-all",
-                    mode === "video"
-                      ? "bg-purple-600/25 text-purple-300"
-                      : "text-[#6b7280]"
+                    mode === "video" ? "bg-purple-600/25 text-purple-300" : "text-[#6b7280]"
                   )}
                 >
                   <Film size={11} />
@@ -383,7 +471,7 @@ export function PromptInput({
                 </button>
               </div>
 
-              {/* Active settings summary */}
+              {/* Settings summary */}
               <button
                 type="button"
                 onClick={() => setSettingsOpen(true)}
@@ -392,7 +480,7 @@ export function PromptInput({
                 <span className="truncate">{activeSettingsSummary}</span>
               </button>
 
-              {/* Settings button */}
+              {/* Settings icon */}
               <button
                 type="button"
                 onClick={() => setSettingsOpen(true)}
@@ -402,7 +490,6 @@ export function PromptInput({
                     ? "text-orange-300 bg-orange-500/10"
                     : "text-[#6b7280] hover:text-[#9ca3af] hover:bg-[#1e1f22]"
                 )}
-                title="Open settings"
               >
                 <SlidersHorizontal size={13} />
                 {rawMode && <span>Raw</span>}
@@ -411,23 +498,28 @@ export function PromptInput({
           ) : (
             /* Desktop/Tablet: full inline settings bar */
             <div className="px-3 pb-3 flex items-center gap-1.5 flex-wrap border-t border-[#1e1f22] pt-2.5">
-              {/* Mode */}
-              <SettingChip active={mode === "image"} onClick={() => onModeChange("image")}>
-                <span className="flex items-center gap-1">
-                  <ImageIcon size={10} />
-                  Image
-                </span>
+
+              {/* ── Provider selector ── */}
+              <SettingChip active={provider === "xai"} onClick={() => onProviderChange("xai")} accent="purple">
+                <span className="flex items-center gap-1"><Zap size={9} />xAI</span>
               </SettingChip>
-              <SettingChip active={mode === "video"} onClick={() => onModeChange("video")}>
-                <span className="flex items-center gap-1">
-                  <Film size={10} />
-                  Video
-                </span>
+              <SettingChip active={provider === "eternalai"} onClick={() => onProviderChange("eternalai")} accent="teal">
+                <span className="flex items-center gap-1"><span className="text-[11px] leading-none">∞</span>EternalAI</span>
               </SettingChip>
 
               <Divider />
 
-              {/* Aspect ratio */}
+              {/* ── Mode ── */}
+              <SettingChip active={mode === "image"} onClick={() => onModeChange("image")}>
+                <span className="flex items-center gap-1"><ImageIcon size={10} />Image</span>
+              </SettingChip>
+              <SettingChip active={mode === "video"} onClick={() => onModeChange("video")}>
+                <span className="flex items-center gap-1"><Film size={10} />Video</span>
+              </SettingChip>
+
+              <Divider />
+
+              {/* ── Aspect ratio ── */}
               {(mode === "image" ? IMAGE_RATIOS : VIDEO_RATIOS).map((r) => (
                 <SettingChip
                   key={r}
@@ -444,10 +536,10 @@ export function PromptInput({
 
               <Divider />
 
-              {/* Video: duration */}
+              {/* ── Duration (video only) ── */}
               {mode === "video" && (
                 <>
-                  {VIDEO_DURATIONS.map((d) => (
+                  {(isEternalAi ? VIDEO_DURATIONS.filter((d) => d <= 5) : VIDEO_DURATIONS).map((d) => (
                     <SettingChip
                       key={d}
                       active={videoSettings.duration === d}
@@ -460,7 +552,7 @@ export function PromptInput({
                 </>
               )}
 
-              {/* Quality */}
+              {/* ── Quality ── */}
               {mode === "image"
                 ? (["1k", "2k"] as ImageResolution[]).map((r) => (
                     <SettingChip
@@ -483,19 +575,15 @@ export function PromptInput({
 
               <Divider />
 
-              {/* Raw mode toggle */}
+              {/* ── Raw mode toggle ── */}
               <button
                 type="button"
                 onClick={() => onRawModeChange(!rawMode)}
-                title={
-                  rawMode
-                    ? "Raw mode ON — prompt will be rewritten to bypass filters"
-                    : "Raw mode OFF — prompt sent as-is"
-                }
+                title={rawMode ? "Raw mode ON" : "Raw mode OFF"}
                 className={cn(
                   "px-2 py-0.5 rounded-md text-[11px] font-semibold transition-all whitespace-nowrap border",
                   rawMode
-                    ? "bg-orange-500/20 text-orange-300 border-orange-500/40 shadow-sm shadow-orange-900/20"
+                    ? "bg-orange-500/20 text-orange-300 border-orange-500/40 shadow-sm"
                     : "text-[#6b7280] hover:text-[#9ca3af] hover:bg-[#1e1f22] border-transparent"
                 )}
               >
@@ -506,11 +594,13 @@ export function PromptInput({
         </div>
       </div>
 
-      {/* Mobile settings sheet — rendered outside the input box */}
+      {/* Mobile settings sheet */}
       {isMobile && (
         <MobileSettingsSheet
           open={settingsOpen}
           onClose={() => setSettingsOpen(false)}
+          provider={provider}
+          onProviderChange={onProviderChange}
           mode={mode}
           onModeChange={onModeChange}
           imageSettings={imageSettings}

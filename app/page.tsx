@@ -13,11 +13,17 @@ import {
   ImageResultMessageData,
   VideoResultMessageData,
   GenerationStatus,
+  Provider,
 } from "@/lib/types";
 import { generateId, truncateText } from "@/lib/utils";
 import { rewritePrompt } from "@/lib/prompt-rewriter";
-import { generateImages, startVideoGeneration, buildGeneratedVideo } from "@/hooks/useGeneration";
+import {
+  generateImages,
+  startVideoGeneration,
+  buildGeneratedVideo,
+} from "@/hooks/useGeneration";
 import { useVideoPolling } from "@/hooks/useVideoPolling";
+import { useEternalAiParallelPolling, useEternalAiSinglePolling } from "@/hooks/useEternalAiPolling";
 import { useThreads } from "@/hooks/useThreads";
 import { useIsMobile } from "@/hooks/useMediaQuery";
 
@@ -40,24 +46,17 @@ function imageOrigin(url: string, aspectRatio: AspectRatio, label: string): Orig
 }
 
 function videoOrigin(videoUrl: string, aspectRatio: AspectRatio, label: string): Origin {
-  return {
-    type: "video-frame",
-    thumbnailUrl: videoUrl,
-    videoUrl,
-    label,
-    aspectRatio,
-    framePosition: "end",
-  };
+  return { type: "video-frame", thumbnailUrl: videoUrl, videoUrl, label, aspectRatio, framePosition: "end" };
 }
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
 export default function HomePage() {
   const isMobile = useIsMobile();
-  // On mobile, sidebar starts closed; on tablet/desktop it starts open
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [mode, setMode] = useState<Mode>("image");
+  const [provider, setProvider] = useState<Provider>("xai");
   const [imageSettings, setImageSettings] = useState<ImageSettings>(DEFAULT_IMAGE_SETTINGS);
   const [videoSettings, setVideoSettings] = useState<VideoSettings>(DEFAULT_VIDEO_SETTINGS);
 
@@ -65,16 +64,17 @@ export default function HomePage() {
   const [activeThreadId, setActiveThreadId] = useState<string | undefined>(undefined);
   const [activeMessages, setActiveMessages] = useState<ChatMessage[]>([]);
 
-  // ── Raw mode (prompt rewriter) ────────────────────────────────────────────────
+  // ── Raw mode ──────────────────────────────────────────────────────────────────
   const [rawMode, setRawMode] = useState(false);
 
-  // ── Unified origin state ──────────────────────────────────────────────────────
+  // ── Origin ────────────────────────────────────────────────────────────────────
   const [origin, setOrigin] = useState<Origin | null>(null);
 
-  // ── Generation ────────────────────────────────────────────────────────────────
+  // ── Generation state ──────────────────────────────────────────────────────────
   const [genStatus, setGenStatus] = useState<GenerationStatus>("idle");
   const [genError, setGenError] = useState<string | null>(null);
 
+  // Pending video metadata (shared by xAI and EternalAI video paths)
   const pendingVideoRef = useRef<{
     threadId: string;
     loadingMsgId: string;
@@ -84,65 +84,93 @@ export default function HomePage() {
     originAspectRatio?: AspectRatio;
   } | null>(null);
 
+  // Pending EternalAI image metadata
+  const pendingEternalImgRef = useRef<{
+    threadId: string;
+    loadingMsgId: string;
+    prompt: string;
+    aspectRatio: AspectRatio;
+    // partial urls as they arrive
+    collectedUrls: (string | null)[];
+    expectedCount: number;
+  } | null>(null);
+
   const { threads, upsertThread, removeThread, clearAll, replaceMessage } = useThreads();
+
+  // ── xAI video polling ─────────────────────────────────────────────────────────
   const {
     status: pollStatus,
     videoUrl: polledVideoUrl,
     videoDuration: polledDuration,
     errorMessage: pollErrorMessage,
-    startPolling,
-    reset: resetPolling,
+    startPolling: startXaiVideoPolling,
+    reset: resetXaiPolling,
   } = useVideoPolling();
 
-  // ── Responsive sidebar default ────────────────────────────────────────────────
-  // Once the client hydrates, set sidebar open on non-mobile
+  // ── EternalAI parallel image polling ─────────────────────────────────────────
+  const {
+    start: startEternalImgPolling,
+    reset: resetEternalImgPolling,
+  } = useEternalAiParallelPolling();
+
+  // ── EternalAI single (video) polling ─────────────────────────────────────────
+  const {
+    status: eternalVidStatus,
+    resultUrl: eternalVidUrl,
+    errorMessage: eternalVidError,
+    start: startEternalVidPolling,
+    reset: resetEternalVidPolling,
+  } = useEternalAiSinglePolling();
+
+  // ── Sidebar default (open on non-mobile after hydration) ─────────────────────
   useEffect(() => {
     if (!isMobile) setSidebarOpen(true);
   }, [isMobile]);
 
-  // ── Polling resolution ────────────────────────────────────────────────────────
+  // ── Helper: resolve video result into thread ──────────────────────────────────
+  const resolveVideoResult = useCallback((videoUrl: string, durationSec: number | null) => {
+    if (!pendingVideoRef.current) return;
+    const { threadId, loadingMsgId, existingVideoMsgId, prompt: vPrompt, settings, originAspectRatio } = pendingVideoRef.current;
+
+    const newVideo = buildGeneratedVideo(vPrompt, videoUrl, durationSec, settings, originAspectRatio);
+
+    if (existingVideoMsgId) {
+      setActiveMessages((prev) => {
+        const existingMsg = prev.find((m) => m.id === existingVideoMsgId) as VideoResultMessageData | undefined;
+        if (!existingMsg) return prev;
+        const updatedMsg: VideoResultMessageData = {
+          ...existingMsg,
+          versions: [...existingMsg.versions, newVideo],
+          activeVersionIndex: existingMsg.versions.length,
+        };
+        const newMessages = prev
+          .filter((m) => m.id !== loadingMsgId)
+          .map((m) => (m.id === existingVideoMsgId ? updatedMsg : m));
+        const currentThread = threads.find((t) => t.id === threadId);
+        if (currentThread) upsertThread({ ...currentThread, messages: newMessages, updatedAt: Date.now() });
+        return newMessages;
+      });
+    } else {
+      const videoMsg: VideoResultMessageData = {
+        id: generateId(), type: "video-result", prompt: vPrompt,
+        versions: [newVideo], activeVersionIndex: 0, timestamp: Date.now(),
+      };
+      replaceMessage(threadId, loadingMsgId, videoMsg);
+      if (activeThreadId === threadId) {
+        setActiveMessages((prev) => prev.map((m) => (m.id === loadingMsgId ? videoMsg : m)));
+      }
+    }
+
+    setOrigin(videoOrigin(videoUrl, newVideo.aspectRatio, `Video · end`));
+    pendingVideoRef.current = null;
+    setGenStatus("idle");
+  }, [threads, upsertThread, replaceMessage, activeThreadId]);
+
+  // ── xAI video polling resolution ─────────────────────────────────────────────
   useEffect(() => {
     if (pollStatus === "done" && polledVideoUrl && pendingVideoRef.current) {
-      const { threadId, loadingMsgId, existingVideoMsgId, prompt: vPrompt, settings, originAspectRatio } = pendingVideoRef.current;
-
-      const newVideo = buildGeneratedVideo(vPrompt, polledVideoUrl, polledDuration, settings, originAspectRatio);
-
-      if (existingVideoMsgId) {
-        setActiveMessages((prev) => {
-          const existingMsg = prev.find((m) => m.id === existingVideoMsgId) as VideoResultMessageData | undefined;
-          if (!existingMsg) return prev;
-          const updatedMsg: VideoResultMessageData = {
-            ...existingMsg,
-            versions: [...existingMsg.versions, newVideo],
-            activeVersionIndex: existingMsg.versions.length,
-          };
-          const newMessages = prev
-            .filter((m) => m.id !== loadingMsgId)
-            .map((m) => (m.id === existingVideoMsgId ? updatedMsg : m));
-          const currentThread = threads.find((t) => t.id === threadId);
-          if (currentThread) upsertThread({ ...currentThread, messages: newMessages, updatedAt: Date.now() });
-          return newMessages;
-        });
-      } else {
-        const videoMsg: VideoResultMessageData = {
-          id: generateId(),
-          type: "video-result",
-          prompt: vPrompt,
-          versions: [newVideo],
-          activeVersionIndex: 0,
-          timestamp: Date.now(),
-        };
-        replaceMessage(threadId, loadingMsgId, videoMsg);
-        if (activeThreadId === threadId) {
-          setActiveMessages((prev) => prev.map((m) => (m.id === loadingMsgId ? videoMsg : m)));
-        }
-      }
-
-      setOrigin(videoOrigin(polledVideoUrl, newVideo.aspectRatio, `Video · end`));
-
-      pendingVideoRef.current = null;
-      setGenStatus("idle");
-      resetPolling();
+      resolveVideoResult(polledVideoUrl, polledDuration);
+      resetXaiPolling();
     } else if (pollStatus === "failed" || pollStatus === "expired" || pollStatus === "error") {
       setGenError(pollErrorMessage ?? "Video generation failed. Please try again.");
       setGenStatus("error");
@@ -151,17 +179,42 @@ export default function HomePage() {
         if (activeThreadId === threadId) {
           setActiveMessages((prev) => {
             const filtered = prev.filter((m) => m.id !== loadingMsgId);
-            const currentThread = threads.find((t) => t.id === threadId);
-            if (currentThread) upsertThread({ ...currentThread, messages: filtered, updatedAt: Date.now() });
+            const ct = threads.find((t) => t.id === threadId);
+            if (ct) upsertThread({ ...ct, messages: filtered, updatedAt: Date.now() });
             return filtered;
           });
         }
       }
       pendingVideoRef.current = null;
-      resetPolling();
+      resetXaiPolling();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pollStatus, polledVideoUrl, pollErrorMessage]);
+
+  // ── EternalAI video polling resolution ───────────────────────────────────────
+  useEffect(() => {
+    if (eternalVidStatus === "success" && eternalVidUrl && pendingVideoRef.current) {
+      resolveVideoResult(eternalVidUrl, null);
+      resetEternalVidPolling();
+    } else if (eternalVidStatus === "failed" || eternalVidStatus === "error") {
+      setGenError(eternalVidError ?? "EternalAI video generation failed. Please try again.");
+      setGenStatus("error");
+      if (pendingVideoRef.current) {
+        const { threadId, loadingMsgId } = pendingVideoRef.current;
+        if (activeThreadId === threadId) {
+          setActiveMessages((prev) => {
+            const filtered = prev.filter((m) => m.id !== loadingMsgId);
+            const ct = threads.find((t) => t.id === threadId);
+            if (ct) upsertThread({ ...ct, messages: filtered, updatedAt: Date.now() });
+            return filtered;
+          });
+        }
+      }
+      pendingVideoRef.current = null;
+      resetEternalVidPolling();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eternalVidStatus, eternalVidUrl, eternalVidError]);
 
   // ── Submit ────────────────────────────────────────────────────────────────────
   const handleSubmit = useCallback(async () => {
@@ -172,6 +225,16 @@ export default function HomePage() {
 
     const isVideoMode = mode === "video";
 
+    // EternalAI video requires a reference image
+    if (isVideoMode && provider === "eternalai") {
+      const hasImageOrigin = origin?.type === "image" && !!origin?.imageUrl;
+      if (!hasImageOrigin) {
+        setGenError("EternalAI video requires a reference image. Generate an image first and set it as Origin.");
+        return;
+      }
+    }
+
+    // Resolve / create thread
     let threadId = activeThreadId;
     let thread: Thread;
     if (!threadId) {
@@ -197,6 +260,7 @@ export default function HomePage() {
     setActiveMessages([...newMessages]);
     setPrompt("");
 
+    // ── VIDEO path ────────────────────────────────────────────────────────────────
     if (isVideoMode) {
       setGenStatus("generating-video");
 
@@ -213,20 +277,14 @@ export default function HomePage() {
         if (origin.type === "image") {
           apiImageUrl = origin.imageUrl;
         } else {
-          if (origin.imageUrl) {
-            apiImageUrl = origin.imageUrl;
-          } else {
-            apiVideoUrl = origin.videoUrl;
-          }
+          if (origin.imageUrl) apiImageUrl = origin.imageUrl;
+          else apiVideoUrl = origin.videoUrl;
         }
       }
 
       if (!origin && existingVideoMsg) {
         const lastVid = existingVideoMsg.versions[existingVideoMsg.activeVersionIndex];
-        if (lastVid) {
-          apiVideoUrl = lastVid.url;
-          originAspectRatio = lastVid.aspectRatio;
-        }
+        if (lastVid) { apiVideoUrl = lastVid.url; originAspectRatio = lastVid.aspectRatio; }
       }
 
       pendingVideoRef.current = {
@@ -239,9 +297,22 @@ export default function HomePage() {
       };
 
       try {
-        const requestId = await startVideoGeneration(text, videoSettings, apiImageUrl, apiVideoUrl);
+        const requestId = await startVideoGeneration(text, videoSettings, provider, apiImageUrl, apiVideoUrl);
+
+        // Check EternalAI fast-path sentinel
+        if (requestId.startsWith("__done__:")) {
+          const url = requestId.slice(9);
+          resolveVideoResult(url, null);
+          return;
+        }
+
         setGenStatus("polling-video");
-        startPolling(requestId);
+
+        if (provider === "eternalai") {
+          startEternalVidPolling(requestId, "video");
+        } else {
+          startXaiVideoPolling(requestId);
+        }
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Video generation failed";
         setGenError(msg);
@@ -251,27 +322,106 @@ export default function HomePage() {
         pendingVideoRef.current = null;
       }
 
+    // ── IMAGE path ────────────────────────────────────────────────────────────────
     } else {
       setGenStatus("generating-image");
       const refImageUrl = origin?.type === "image" ? origin.imageUrl : undefined;
       const effectiveAspect = origin ? origin.aspectRatio : imageSettings.aspectRatio;
 
       try {
-        const imgs = await generateImages(text, { ...imageSettings, aspectRatio: effectiveAspect }, refImageUrl);
+        const result = await generateImages(text, { ...imageSettings, aspectRatio: effectiveAspect }, provider, refImageUrl);
 
-        const resultMsg: ImageResultMessageData = {
-          id: generateId(), type: "image-result", prompt: text,
-          images: imgs, selectedIndex: 0,
-          aspectRatio: effectiveAspect, timestamp: Date.now(),
-        };
+        // ── xAI: synchronous result ───────────────────────────────────────────────
+        if (Array.isArray(result)) {
+          const imgs = result;
+          const resultMsg: ImageResultMessageData = {
+            id: generateId(), type: "image-result", prompt: text,
+            images: imgs, selectedIndex: 0, aspectRatio: effectiveAspect, timestamp: Date.now(),
+          };
+          const finalMessages = newMessages.map((m) => (m.id === loadingId ? resultMsg : m));
+          upsertThread({ ...updatedThread, messages: finalMessages, thumbnail: updatedThread.thumbnail ?? imgs[0]?.url, updatedAt: Date.now() });
+          setActiveMessages([...finalMessages]);
+          setGenStatus("idle");
+          if (imgs[0]) setOrigin(imageOrigin(imgs[0].url, effectiveAspect, "Image 1"));
 
-        const finalMessages = newMessages.map((m) => (m.id === loadingId ? resultMsg : m));
-        upsertThread({ ...updatedThread, messages: finalMessages, thumbnail: updatedThread.thumbnail ?? imgs[0]?.url, updatedAt: Date.now() });
-        setActiveMessages([...finalMessages]);
-        setGenStatus("idle");
+        // ── EternalAI: async polling ──────────────────────────────────────────────
+        } else {
+          const { requestIds } = result;
 
-        if (imgs[0]) {
-          setOrigin(imageOrigin(imgs[0].url, effectiveAspect, "Image 1"));
+          // Store pending metadata
+          pendingEternalImgRef.current = {
+            threadId: threadId!,
+            loadingMsgId: loadingId,
+            prompt: text,
+            aspectRatio: effectiveAspect,
+            collectedUrls: Array(requestIds.length).fill(null),
+            expectedCount: requestIds.length,
+          };
+
+          // Stay in generating-image so the spinner keeps showing
+          // The loadingMsg stays until we have at least 1 result
+
+          startEternalImgPolling(requestIds, {
+            onItemUpdate: (index, url) => {
+              const pending = pendingEternalImgRef.current;
+              if (!pending) return;
+
+              pending.collectedUrls[index] = url;
+              const validUrls = pending.collectedUrls.filter(Boolean) as string[];
+
+              // Build partial result — show images as they arrive
+              const partialImages = validUrls.map((u) => ({ url: u, aspectRatio: pending.aspectRatio }));
+              const partialMsg: ImageResultMessageData = {
+                id: generateId(), type: "image-result", prompt: pending.prompt,
+                images: partialImages, selectedIndex: 0,
+                aspectRatio: pending.aspectRatio, timestamp: Date.now(),
+              };
+
+              setActiveMessages((prev) => {
+                // Replace loading or existing partial result
+                const hasResult = prev.some((m) => m.type === "image-result" && m.prompt === pending.prompt);
+                if (hasResult) {
+                  return prev.map((m) =>
+                    m.type === "image-result" && m.prompt === pending.prompt ? partialMsg : m
+                  );
+                }
+                return prev.map((m) => (m.id === pending.loadingMsgId ? partialMsg : m));
+              });
+            },
+            onAllDone: (urls) => {
+              const pending = pendingEternalImgRef.current;
+              if (!pending) return;
+
+              const imgs = urls.map((u) => ({ url: u, aspectRatio: pending.aspectRatio }));
+              const resultMsg: ImageResultMessageData = {
+                id: generateId(), type: "image-result", prompt: pending.prompt,
+                images: imgs, selectedIndex: 0,
+                aspectRatio: pending.aspectRatio, timestamp: Date.now(),
+              };
+
+              // Persist to thread
+              const ct = threads.find((t) => t.id === pending.threadId);
+              if (ct) {
+                const finalMessages = ct.messages
+                  .filter((m) => m.id !== pending.loadingMsgId)
+                  .filter((m) => !(m.type === "image-result" && (m as ImageResultMessageData).prompt === pending.prompt))
+                  .concat(resultMsg);
+                upsertThread({ ...ct, messages: finalMessages, thumbnail: ct.thumbnail ?? imgs[0]?.url, updatedAt: Date.now() });
+              }
+
+              setActiveMessages((prev) => {
+                const filtered = prev
+                  .filter((m) => m.id !== pending.loadingMsgId)
+                  .filter((m) => !(m.type === "image-result" && (m as ImageResultMessageData).prompt === pending.prompt));
+                return [...filtered, resultMsg];
+              });
+
+              if (imgs[0]) setOrigin(imageOrigin(imgs[0].url, pending.aspectRatio, "Image 1"));
+
+              pendingEternalImgRef.current = null;
+              setGenStatus("idle");
+            },
+          });
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Image generation failed";
@@ -279,9 +429,16 @@ export default function HomePage() {
         setGenStatus("error");
         upsertThread({ ...updatedThread, messages: newMessages.filter((m) => m.id !== loadingId) });
         setActiveMessages((prev) => prev.filter((m) => m.id !== loadingId));
+        resetEternalImgPolling();
+        pendingEternalImgRef.current = null;
       }
     }
-  }, [prompt, rawMode, genStatus, mode, origin, imageSettings, videoSettings, activeThreadId, threads, upsertThread, startPolling]);
+  }, [
+    prompt, rawMode, genStatus, mode, provider, origin,
+    imageSettings, videoSettings, activeThreadId, threads,
+    upsertThread, startXaiVideoPolling, startEternalVidPolling,
+    startEternalImgPolling, resetEternalImgPolling, resolveVideoResult,
+  ]);
 
   // ── Thread navigation ─────────────────────────────────────────────────────────
   const deriveOriginFromThread = useCallback((messages: ChatMessage[]): Origin | null => {
@@ -298,15 +455,22 @@ export default function HomePage() {
     return null;
   }, []);
 
+  const resetAllPolling = useCallback(() => {
+    resetXaiPolling();
+    resetEternalVidPolling();
+    resetEternalImgPolling();
+    pendingVideoRef.current = null;
+    pendingEternalImgRef.current = null;
+  }, [resetXaiPolling, resetEternalVidPolling, resetEternalImgPolling]);
+
   const handleSelectThread = useCallback((thread: Thread) => {
     setActiveThreadId(thread.id);
     setActiveMessages([...thread.messages]);
     setOrigin(deriveOriginFromThread(thread.messages));
     setGenStatus("idle");
     setGenError(null);
-    resetPolling();
-    pendingVideoRef.current = null;
-  }, [resetPolling, deriveOriginFromThread]);
+    resetAllPolling();
+  }, [resetAllPolling, deriveOriginFromThread]);
 
   const handleNewThread = useCallback(() => {
     setActiveThreadId(undefined);
@@ -315,13 +479,11 @@ export default function HomePage() {
     setGenStatus("idle");
     setGenError(null);
     setPrompt("");
-    resetPolling();
-    pendingVideoRef.current = null;
-  }, [resetPolling]);
+    resetAllPolling();
+  }, [resetAllPolling]);
 
   const handleDeleteThread = useCallback((id: string) => {
     removeThread(id);
-    // If the deleted thread was active, go back to empty state
     if (id === activeThreadId) {
       setActiveThreadId(undefined);
       setActiveMessages([]);
@@ -329,10 +491,9 @@ export default function HomePage() {
       setGenStatus("idle");
       setGenError(null);
       setPrompt("");
-      resetPolling();
-      pendingVideoRef.current = null;
+      resetAllPolling();
     }
-  }, [removeThread, activeThreadId, resetPolling]);
+  }, [removeThread, activeThreadId, resetAllPolling]);
 
   const handleVideoVersionChange = useCallback((messageId: string, versionIndex: number) => {
     if (!activeThreadId) return;
@@ -359,10 +520,7 @@ export default function HomePage() {
   const isEmpty = activeMessages.length === 0 && !isLoading;
 
   return (
-    <div
-      className="flex flex-col bg-[#1e1f22] overflow-hidden"
-      style={{ height: "100dvh" }}
-    >
+    <div className="flex flex-col bg-[#1e1f22] overflow-hidden" style={{ height: "100dvh" }}>
       <Header
         onToggleSidebar={() => setSidebarOpen((p) => !p)}
         onNewThread={handleNewThread}
@@ -381,9 +539,7 @@ export default function HomePage() {
           onClose={() => setSidebarOpen(false)}
         />
 
-        {/* Main: chat fills full remaining width */}
         <div className="flex flex-col flex-1 overflow-hidden min-h-0">
-
           {/* Scrollable chat area */}
           <div className="flex-1 overflow-y-auto min-h-0 relative scroll-contain">
             {/* Mode toggle — floating top-right */}
@@ -395,7 +551,7 @@ export default function HomePage() {
               <div className="flex flex-col items-center justify-center min-h-full gap-6 px-4 py-10 md:gap-8 md:py-12">
                 <div className="flex flex-col items-center gap-3 md:gap-4">
                   <div className="w-12 h-12 md:w-14 md:h-14 rounded-2xl bg-gradient-to-br from-purple-500 to-violet-700 flex items-center justify-center shadow-xl shadow-purple-900/30">
-                    <Sparkles size={22} className="text-white md:text-[24px]" />
+                    <Sparkles size={22} className="text-white" />
                   </div>
                   <div className="text-center">
                     <h1 className="text-2xl md:text-3xl font-bold text-white tracking-tight">
@@ -444,6 +600,8 @@ export default function HomePage() {
               onPromptChange={setPrompt}
               mode={mode}
               onModeChange={handleModeChange}
+              provider={provider}
+              onProviderChange={setProvider}
               imageSettings={imageSettings}
               onImageSettingsChange={setImageSettings}
               videoSettings={videoSettings}

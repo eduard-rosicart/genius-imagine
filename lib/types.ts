@@ -1,5 +1,7 @@
 export type Mode = "image" | "video";
 
+export type Provider = "xai" | "eternalai";
+
 export type AspectRatio =
   | "1:1"
   | "16:9"
