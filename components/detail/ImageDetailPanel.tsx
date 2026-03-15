@@ -12,8 +12,10 @@ interface ImageDetailPanelProps {
   selectedIndex: number;
   onSelectIndex: (i: number) => void;
   onClose: () => void;
-  onRemix: (imageUrl: string) => void;
-  onGenerateVideo: (imageUrl: string) => void;
+  /** Called with the image URL AND its real aspect ratio */
+  onRemix: (imageUrl: string, aspectRatio: GeneratedImage["aspectRatio"]) => void;
+  /** Called with the image URL AND its real aspect ratio */
+  onGenerateVideo: (imageUrl: string, aspectRatio: GeneratedImage["aspectRatio"]) => void;
 }
 
 export function ImageDetailPanel({
@@ -137,7 +139,7 @@ export function ImageDetailPanel({
           {/* Primary actions */}
           <div className="space-y-2">
             <button
-              onClick={() => onRemix(current.url)}
+              onClick={() => onRemix(current.url, current.aspectRatio)}
               className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-purple-600/10 hover:bg-purple-600/20 border border-purple-600/20 hover:border-purple-600/40 text-purple-300 transition-all"
             >
               <RefreshCw size={15} />
@@ -148,7 +150,7 @@ export function ImageDetailPanel({
             </button>
 
             <button
-              onClick={() => onGenerateVideo(current.url)}
+              onClick={() => onGenerateVideo(current.url, current.aspectRatio)}
               className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-[#2a2b2e] hover:bg-[#333438] border border-[#3a3b3e] hover:border-[#4a4b4e] text-[#e8e8e8] transition-all"
             >
               <Film size={15} className="text-[#9ca3af]" />

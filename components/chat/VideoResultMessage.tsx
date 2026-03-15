@@ -5,11 +5,15 @@ import { VideoResultMessageData, Origin } from "@/lib/types";
 import { VideoPlayer } from "@/components/results/VideoPlayer";
 import { captureVideoFrame, FramePosition } from "@/lib/video-utils";
 import { cn } from "@/lib/utils";
+import { Pin } from "lucide-react";
 
 interface VideoResultMessageProps {
   message: VideoResultMessageData;
   onVersionChange: (messageId: string, versionIndex: number) => void;
   onSelectOrigin: (origin: Origin) => void;
+  /** If this video is the current origin, highlight it */
+  isOrigin?: boolean;
+  originFramePos?: FramePosition;
 }
 
 const FRAME_POSITIONS: { pos: FramePosition; label: string }[] = [
@@ -22,10 +26,11 @@ export function VideoResultMessage({
   message,
   onVersionChange,
   onSelectOrigin,
+  isOrigin = false,
+  originFramePos,
 }: VideoResultMessageProps) {
-  const videoRef = useRef<HTMLVideoElement>(null);
   const [capturingPos, setCapturingPos] = useState<FramePosition | null>(null);
-  const [activeFramePos, setActiveFramePos] = useState<FramePosition>("end");
+  const [activeFramePos, setActiveFramePos] = useState<FramePosition>(originFramePos ?? "end");
 
   const activeVideo = message.versions[message.activeVersionIndex];
   if (!activeVideo) return null;
@@ -37,14 +42,11 @@ export function VideoResultMessage({
       const versionLabel = `Video v${message.activeVersionIndex + 1}`;
       setCapturingPos(pos);
 
-      // Find the actual <video> element rendered by VideoPlayer in the DOM.
-      // We query within our container using a ref on the wrapper div.
-      // Fallback: if no video element is found just use the video URL directly.
-      const videoEl = document.querySelector<HTMLVideoElement>(
-        `[data-video-id="${activeVideo.id}"]`
-      );
+      // Fix: query the <video> element *inside* the data-video-id container
+      const container = document.querySelector(`[data-video-id="${activeVideo.id}"]`);
+      const videoEl = container?.querySelector<HTMLVideoElement>("video") ?? null;
 
-      let thumbnailUrl = activeVideo.url; // fallback thumbnail = video URL itself
+      let thumbnailUrl: string | undefined;
       let imageUrl: string | undefined;
 
       if (videoEl) {
@@ -53,14 +55,15 @@ export function VideoResultMessage({
           thumbnailUrl = frame;
           imageUrl = frame;
         } catch {
-          // CORS or other error — fall back to video URL as source
-          imageUrl = undefined;
+          // CORS blocked — no frame capture, will fall back to video_url in submit
         }
       }
 
       const origin: Origin = {
         type: "video-frame",
-        thumbnailUrl,
+        // thumbnailUrl: use captured frame if available; otherwise leave undefined
+        // so OriginIndicator renders the fallback video icon
+        thumbnailUrl: thumbnailUrl ?? "",
         imageUrl,
         videoUrl: activeVideo.url,
         label: `${versionLabel} · ${pos}`,
@@ -77,12 +80,26 @@ export function VideoResultMessage({
 
   return (
     <div className="w-full space-y-2">
-      {/* Video player — we pass the video id so we can query it for frame capture */}
-      <div data-video-id={activeVideo.id}>
+      {/* Video player wrapper — data-video-id here so querySelector finds the <video> inside */}
+      <div
+        data-video-id={activeVideo.id}
+        className={cn(
+          "relative rounded-2xl transition-all duration-200",
+          isOrigin && "ring-2 ring-cyan-500 ring-offset-2 ring-offset-[#1e1f22]"
+        )}
+      >
         <VideoPlayer url={activeVideo.url} aspectRatio={activeVideo.aspectRatio} />
+
+        {/* Origin badge */}
+        {isOrigin && (
+          <div className="absolute top-2 left-2 flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-cyan-500/90 backdrop-blur-sm z-10">
+            <Pin size={9} className="text-white" />
+            <span className="text-[9px] font-bold text-white uppercase tracking-wide">Origin</span>
+          </div>
+        )}
       </div>
 
-      {/* ── Frame origin selector ── */}
+      {/* ── Frame selector ── */}
       <div className="flex items-center gap-2">
         <span className="text-[11px] text-[#4b5563] font-medium">Use as origin:</span>
         <div className="flex items-center gap-1">
@@ -93,7 +110,9 @@ export function VideoResultMessage({
               disabled={capturingPos !== null}
               className={cn(
                 "px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all",
-                activeFramePos === pos
+                isOrigin && activeFramePos === pos
+                  ? "bg-cyan-500/25 text-cyan-300 border border-cyan-500/40"
+                  : activeFramePos === pos
                   ? "bg-purple-600/25 text-purple-300 border border-purple-500/40"
                   : "text-[#6b7280] hover:text-[#9ca3af] bg-[#2a2b2e] border border-[#3a3b3e] hover:border-[#4a4b4e]",
                 capturingPos !== null && "opacity-50 cursor-not-allowed"

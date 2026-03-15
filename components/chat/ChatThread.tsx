@@ -15,6 +15,8 @@ interface ChatThreadProps {
   selectedImageIndex?: number;
   onVideoVersionChange: (messageId: string, versionIndex: number) => void;
   onSelectOrigin: (origin: Origin) => void;
+  /** The active origin, used to highlight origin assets in the thread */
+  activeOrigin: Origin | null;
 }
 
 export function ChatThread({
@@ -24,6 +26,7 @@ export function ChatThread({
   selectedImageIndex = 0,
   onVideoVersionChange,
   onSelectOrigin,
+  activeOrigin,
 }: ChatThreadProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -32,7 +35,7 @@ export function ChatThread({
   }, [messages.length]);
 
   return (
-    <div className="flex flex-col gap-5 px-4 py-6 max-w-[600px] w-full mx-auto">
+    <div className="flex flex-col gap-6 px-4 py-6 max-w-[620px] w-full mx-auto">
       {messages.map((msg) => {
         switch (msg.type) {
           case "prompt":
@@ -47,6 +50,10 @@ export function ChatThread({
 
           case "image-result": {
             const isSelected = selectedImageMessageId === msg.id;
+            // Determine which image in this gallery is the active origin
+            const originImageUrl =
+              activeOrigin?.type === "image" ? activeOrigin.imageUrl : undefined;
+
             return (
               <div key={msg.id}>
                 <ImageGallery
@@ -55,6 +62,7 @@ export function ChatThread({
                   onSelect={(i) => onSelectImage(msg.id, i)}
                   onSelectOrigin={onSelectOrigin}
                   galleryLabel="Image"
+                  activeOriginUrl={originImageUrl}
                 />
               </div>
             );
@@ -67,16 +75,24 @@ export function ChatThread({
               </div>
             );
 
-          case "video-result":
+          case "video-result": {
+            // Check if this video message contains the active origin video
+            const isOriginVideo =
+              activeOrigin?.type === "video-frame" &&
+              msg.versions.some((v) => v.url === activeOrigin.videoUrl);
+
             return (
               <div key={msg.id}>
                 <VideoResultMessage
                   message={msg}
                   onVersionChange={onVideoVersionChange}
                   onSelectOrigin={onSelectOrigin}
+                  isOrigin={isOriginVideo}
+                  originFramePos={isOriginVideo ? activeOrigin?.framePosition : undefined}
                 />
               </div>
             );
+          }
 
           default:
             return null;

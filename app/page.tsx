@@ -294,16 +294,33 @@ export default function HomePage() {
   }, [prompt, genStatus, mode, origin, imageSettings, videoSettings, activeThreadId, threads, upsertThread, startPolling]);
 
   // ── Thread navigation ─────────────────────────────────────────────────────────
+  /** Derive the best available origin from the last result in a thread */
+  const deriveOriginFromThread = useCallback((messages: ChatMessage[]): Origin | null => {
+    // Walk backwards to find the last result
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (msg.type === "video-result") {
+        const vid = msg.versions[msg.activeVersionIndex];
+        if (vid) return videoOrigin(vid.url, vid.aspectRatio, "Video · end");
+      }
+      if (msg.type === "image-result" && msg.images[0]) {
+        return imageOrigin(msg.images[0].url, msg.images[0].aspectRatio, "Image 1");
+      }
+    }
+    return null;
+  }, []);
+
   const handleSelectThread = useCallback((thread: Thread) => {
     setActiveThreadId(thread.id);
     setActiveMessages([...thread.messages]);
     setDetailMessageId(undefined);
-    setOrigin(null);
+    // Restore origin from the last result in the thread
+    setOrigin(deriveOriginFromThread(thread.messages));
     setGenStatus("idle");
     setGenError(null);
     resetPolling();
     pendingVideoRef.current = null;
-  }, [resetPolling]);
+  }, [resetPolling, deriveOriginFromThread]);
 
   const handleNewThread = useCallback(() => {
     setActiveThreadId(undefined);
@@ -327,13 +344,13 @@ export default function HomePage() {
     }
   }, [detailMessageId, detailImageIndex]);
 
-  const handleRemix = useCallback((imageUrl: string) => {
+  // aspectRatio now comes from the actual image, not from imageSettings default
+  const handleRemix = useCallback((imageUrl: string, aspectRatio: AspectRatio) => {
     setMode("image");
     setDetailMessageId(undefined);
     setPrompt("");
-    // Setting the image as origin will use it as reference for new images
-    setOrigin({ type: "image", thumbnailUrl: imageUrl, imageUrl, label: "Remix source", aspectRatio: imageSettings.aspectRatio });
-  }, [imageSettings.aspectRatio]);
+    setOrigin(imageOrigin(imageUrl, aspectRatio, "Remix source"));
+  }, []);
 
   const handleGenerateVideoFromPanel = useCallback((imageUrl: string, aspectRatio: AspectRatio) => {
     setMode("video");
@@ -412,6 +429,7 @@ export default function HomePage() {
                   selectedImageIndex={detailImageIndex}
                   onVideoVersionChange={handleVideoVersionChange}
                   onSelectOrigin={handleSelectOrigin}
+                  activeOrigin={origin}
                 />
               )}
 
@@ -452,8 +470,8 @@ export default function HomePage() {
                 selectedIndex={detailImageIndex}
                 onSelectIndex={(i) => setDetailImageIndex(i)}
                 onClose={() => setDetailMessageId(undefined)}
-                onRemix={handleRemix}
-                onGenerateVideo={(url) => handleGenerateVideoFromPanel(url, detailMessage.aspectRatio)}
+                onRemix={(url, ar) => handleRemix(url, ar)}
+                onGenerateVideo={(url, ar) => handleGenerateVideoFromPanel(url, ar)}
               />
             </div>
           )}
